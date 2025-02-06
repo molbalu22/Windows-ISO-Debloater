@@ -10,7 +10,7 @@ An easy-to-use and customizable PowerShell script designed to optimize and deblo
 The script has been tested with:
 
 - **Windows 10**: Version 22H2 (Build 19045.3757)
-- **Windows 11**: Version 23H2 (Build 22631.4037)
+- **Windows 11**: Version 24H2 (Build 26100.1742)
 
 ⚠️ **Should work with other versions too**
 
