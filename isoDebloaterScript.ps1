@@ -109,7 +109,7 @@ if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     $isoFilePath = $openFileDialog.FileName
     Write-Host "Selected ISO file: $isoFilePath"
     Write-LogMessage "ISO Path: $isoFilePath"
-    $mountResult = Mount-DiskImage -ImagePath $isoFilePath -PassThru
+    $mountResult = Mount-DiskImage -ImagePath "$isoFilePath" -PassThru
     if ($mountResult) {
         $sourceDriveLetter = ($mountResult | Get-Volume).DriveLetter
         if ($sourceDriveLetter) {
@@ -137,7 +137,7 @@ Write-Host "`nCopying files from $sourceDrive to $destinationPath"
 Write-LogMessage "Copying files from $sourceDrive to $destinationPath"
 $null = New-Item -ItemType Directory -Path $destinationPath
 $null = xcopy.exe $sourceDrive $destinationPath /E /I /H /R /Y /J
-Dismount-DiskImage -ImagePath $isoFilePath > $null 2>&1
+Dismount-DiskImage -ImagePath "$isoFilePath" > $null 2>&1
 
 # Check files availability
 $installWimPath = Join-Path $destinationPath "sources\install.wim"
@@ -629,7 +629,7 @@ Write-Host "Removing Gamebar Popup"
 reg add "HKLM\zNTUSER\Software\Microsoft\GameBar" /v "AutoGameModeEnabled" /t REG_DWORD /d 0 /f > $null 2>&1
 # Rest added as post install script. Somehow, implementing it directly on the image was causing corruption
 
-# Configure GameBarFTServer (NA)
+# # Configure GameBarFTServer (NA)
 # $packageKey = "HKLM\zSOFTWARE\Classes\PackagedCom\ClassIndex\{FD06603A-2BDF-4BB1-B7DF-5DC68F353601}"
 # $app = (Get-Item "Registry::$packageKey").PSChildName
 # reg add "HKLM\zSOFTWARE\Classes\PackagedCom\Package\$app\Server\0" /v "Executable" /t REG_SZ /d "systray.exe" /f > $null 2>&1
@@ -664,11 +664,28 @@ reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Communications" /v "Con
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Chat" /v "ChatIcon" /t REG_DWORD /d "3" /f > $null 2>&1
 
 Write-Host "Disabling Scheduled Tasks"
-reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{4738DE7A-BCC1-4E2D-B1B0-CADB044BFA81}" /f > $null 2>&1
-reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{6FAC31FA-4A85-4E64-BFD5-2154FF4594B3}" /f > $null 2>&1
-reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{FC931F16-B50A-472E-B061-B6F79A71EF59}" /f > $null 2>&1
-reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{0671EB05-7D95-4153-A32B-1426B9FE61DB}" /f > $null 2>&1
-reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{0600DD45-FAF2-4131-A006-0B17509B9F78}" /f > $null 2>&1
+$win24H2 = (Get-ItemProperty -Path 'Registry::HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name DisplayVersion).DisplayVersion -eq '24H2'
+if ($win24H2) {
+    # Customer Experience Improvement Program
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{780E487D-C62F-4B55-AF84-0E38116AFE07}" /f > $null 2>&1
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{FD607F42-4541-418A-B812-05C32EBA8626}" /f > $null 2>&1
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{E4FED5BC-D567-4044-9642-2EDADF7DE108}" /f > $null 2>&1
+    # Program Data Updater
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{E292525C-72F1-482C-8F35-C513FAA98DAE}" /f > $null 2>&1
+    # Application Compatibility Appraiser
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{3047C197-66F1-4523-BA92-6C955FEF9E4E}" /f > $null 2>&1
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{A0C71CB8-E8F0-498A-901D-4EDA09E07FF4}" /f > $null 2>&1
+}
+else {
+    # Customer Experience Improvement Program
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{4738DE7A-BCC1-4E2D-B1B0-CADB044BFA81}" /f > $null 2>&1
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{6FAC31FA-4A85-4E64-BFD5-2154FF4594B3}" /f > $null 2>&1
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{FC931F16-B50A-472E-B061-B6F79A71EF59}" /f > $null 2>&1
+    # Program Data Updater
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{0671EB05-7D95-4153-A32B-1426B9FE61DB}" /f > $null 2>&1
+    # Application Compatibility Appraiser
+    reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\{0600DD45-FAF2-4131-A006-0B17509B9F78}" /f > $null 2>&1
+}
 reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\Microsoft\Windows\Application Experience\PcaPatchDbTask" /f > $null 2>&1
 reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\Microsoft\Windows\Application Experience\MareBackup" /f > $null 2>&1
 reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser" /f > $null 2>&1
@@ -752,18 +769,32 @@ catch {
 Write-LogMessage "Exporting image"
 $SourceIndex = if (Test-Path $installWimPath) { $WimIndex } else { 1 }
 Write-Host
-$convertToEsd = Read-Host "Compress install.wim to install.esd? (Y/N)"
-if ($convertToEsd -eq 'Y' -or $convertToEsd -eq 'y') {
-    dism /Export-Image /SourceImageFile:$destinationPath\sources\install.wim /SourceIndex:$SourceIndex /DestinationImageFile:$destinationPath\sources\install.esd /compress:recovery
-    Remove-Item -Path "$destinationPath\sources\install.wim" -Force
-    Write-Host "`nConversion to ESD completed" -ForegroundColor Green
-    Write-LogMessage "Conversion to ESD completed"
+$compressRecovery = Read-Host "Compress install.wim to save disk space? (Y/N)"
+$tempWimPath = "$destinationPath\sources\install_temp.wim"
+
+if ($compressRecovery -eq 'Y' -or $compressRecovery -eq 'y') {
+    dism /Export-Image /SourceImageFile:"$destinationPath\sources\install.wim" /SourceIndex:$SourceIndex /DestinationImageFile:"$tempWimPath" /Compress:recovery /CheckIntegrity
+    Write-Host "`nCompression completed" -ForegroundColor Green
+    Write-LogMessage "Compression completed"
 }
 else {
-    Write-Host "Conversion to ESD skipped"
-    dism /Export-Image /SourceImageFile:$destinationPath\sources\install.wim /SourceIndex:$SourceIndex /DestinationImageFile:$destinationPath\sources\install2.wim /compress:max
+    Write-Host "Compression skipped"
+    dism /Export-Image /SourceImageFile:"$destinationPath\sources\install.wim" /SourceIndex:$SourceIndex /DestinationImageFile:"$tempWimPath" /Compress:max /CheckIntegrity
+}
+
+if (Test-Path $tempWimPath) {
     Remove-Item -Path "$destinationPath\sources\install.wim" -Force
-    Rename-Item -Path "$destinationPath\sources\install2.wim" -NewName "install.wim" -Force
+    Move-Item -Path $tempWimPath -Destination "$destinationPath\sources\install.wim" -Force
+    
+    if (-not (Test-Path "$destinationPath\sources\install.wim")) {
+        Write-Host "Error: Final install.wim is missing" -ForegroundColor Red
+        Write-LogMessage "Final install.wim missing"
+        Exit
+    }
+} else {
+    Write-Host "Error: WIM export failed" -ForegroundColor Red
+    Write-LogMessage "WIM export failed"
+    Exit
 }
 
 Write-LogMessage "Specifying boot data"
@@ -853,8 +884,8 @@ Start-Sleep -Milliseconds 1000
 Write-Host "`nGenerating ISO..." -ForegroundColor Cyan
 Write-LogMessage "Generating ISO"
 try {
-    $null = Start-Process -FilePath "$Oscdimg" -ArgumentList @("-bootdata:$BootData", '-m', '-o', '-h', '-l', '-u1', $destinationPath , "$ISOFile") -PassThru -Wait -NoNewWindow
-    # $null = Start-Process -FilePath "$Oscdimg" -ArgumentList @("-bootdata:$BootData", '-m', '-o', '-u2', '-udfver102', $destinationPath , "$ISOFile") -PassThru -Wait -NoNewWindow
+    # $null = Start-Process -FilePath "$Oscdimg" -ArgumentList @("-bootdata:$BootData", '-m', '-o', '-h', '-l', '-u1', $destinationPath , "$ISOFile") -PassThru -Wait -NoNewWindow
+    $null = Start-Process -FilePath "$Oscdimg" -ArgumentList @("-bootdata:$BootData", '-m', '-o', '-h', '-u2', '-udfver102', $destinationPath , "$ISOFile") -PassThru -Wait -NoNewWindow
     Write-LogMessage "ISO successfully created"
 }
 catch {
@@ -873,6 +904,22 @@ catch {
 finally {
     Write-LogMessage "Script completed"
 }
+
+# ISO verification
+$verifyMntResult = Mount-DiskImage -ImagePath "$ISOFile" -PassThru
+$verifyDrive = ($verifyMntResult | Get-Volume).DriveLetter
+$isoMountPoint = "${verifyDrive}:\"
+$reqFiles = @("sources\install.wim", "sources\boot.wim", "boot\bcd", "boot\boot.sdi", "bootmgr", "bootmgr.efi", "efi\microsoft\boot\efisys.bin")
+$missingFiles = $reqFiles | Where-Object { -not (Test-Path (Join-Path $isoMountPoint $_)) }
+
+Dismount-DiskImage -ImagePath "$ISOFile" | Out-Null
+
+if ($missingFiles) {
+    Write-LogMessage "ISO verification failed - missing files: $($missingFiles -join ', ')"
+    Write-Host "`nError: Created ISO is missing critical files" -ForegroundColor Red
+    Exit
+}
+Write-LogMessage "ISO verification successful"
 
 Start-Sleep -Milliseconds 1500
 Write-Host "`nScript Completed. Can find the ISO in `"$scriptDirectory"`" -ForegroundColor Green
