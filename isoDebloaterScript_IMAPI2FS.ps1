@@ -44,7 +44,7 @@ function Write-LogMessage {
 # Cleanup Function
 function Remove-TempFiles {
     Remove-Item -Path $destinationPath -Recurse -Force > $null 2>&1
-    Remove-Item -Path $mountDirectory -Recurse -Force > $null 2>&1
+    Remove-Item -Path $installMountDir -Recurse -Force > $null 2>&1
     Remove-Item -Path "$env:SystemDrive\WIDTemp" -Recurse -Force > $null 2>&1
 }
 
@@ -126,7 +126,7 @@ else {
 
 $sourceDrive = "${sourceDriveLetter}:\" # Source Drive of ISO
 $destinationPath = "$env:SystemDrive\WIDTemp\winlite"   # Destination Path
-$mountDirectory = "$env:SystemDrive\WIDTemp\mountdir"   # Mount Directory
+$installMountDir = "$env:SystemDrive\WIDTemp\mountdir\installWIM"   # Mount Directory
 
 # Copy Files
 Write-Host "`nCopying files from $sourceDrive to $destinationPath"
@@ -138,7 +138,7 @@ Dismount-DiskImage -ImagePath "$isoFilePath" > $null 2>&1
 # Check files availability
 $installWimPath = Join-Path $destinationPath "sources\install.wim"
 $installEsdPath = Join-Path $destinationPath "sources\install.esd"
-New-Item -ItemType Directory -Path $mountDirectory > $null 2>&1
+New-Item -ItemType Directory -Path $installMountDir > $null 2>&1
 
 # Handling install.wim and install.esd
 if (-not (Test-Path $installWimPath)) {
@@ -155,7 +155,7 @@ if (-not (Test-Path $installWimPath)) {
             Write-LogMessage "Converting and Mounting image: $EsdIndex"
             dism /Export-Image /SourceImageFile:$installEsdPath /SourceIndex:$EsdIndex /DestinationImageFile:$installWimPath /Compress:max /CheckIntegrity
             Remove-Item $installEsdPath -Force
-            dism /mount-image /imagefile:$installWimPath /index:1 /mountdir:$mountDirectory
+            dism /mount-image /imagefile:$installWimPath /index:1 /mountdir:$installMountDir
         }
         catch {
             Write-LogMessage "Failed to mount image: $_"
@@ -170,9 +170,7 @@ if (-not (Test-Path $installWimPath)) {
 else {
     Write-Host "`nDetails for image: $installWimPath"
     Write-LogMessage "Getting image info"
-    $WimInfo = dism /Get-WimInfo /wimfile:$installWimPath 2>$null | 
-        Where-Object { $_ -match "^(Index : |Name : )" } |
-        ForEach-Object { $_.Trim() }
+    $WimInfo = dism /Get-WimInfo /wimfile:$installWimPath 2>$null | Where-Object { $_ -match "^(Index : |Name : )" } | ForEach-Object { $_.Trim() }
     for ($i = 0; $i -lt $WimInfo.Count; $i += 2) {
         $Index = $WimInfo[$i] -replace "Index : "
         $Name = $WimInfo[$i+1] -replace "Name : "
@@ -183,7 +181,7 @@ else {
     Write-LogMessage "Mounting image: $WimIndex"
     
     try {
-        dism /mount-image /imagefile:$installWimPath /index:$WimIndex /mountdir:$mountDirectory 2>$null
+        dism /mount-image /imagefile:$installWimPath /index:$WimIndex /mountdir:$installMountDir
     }
     catch {
         Write-LogMessage "Failed to mount image: $_"
@@ -191,7 +189,7 @@ else {
     }
 }
 
-if (-not (Test-Path "$mountDirectory\Windows")) {
+if (-not (Test-Path "$installMountDir\Windows")) {
     Write-Host "Error while mounting image. Try again." -ForegroundColor Red
     Write-LogMessage "Mounted image not found. Exiting"
     Remove-TempFiles
@@ -199,7 +197,7 @@ if (-not (Test-Path "$mountDirectory\Windows")) {
 }
 
 # Resolve Image Info
-$WimInfo = Get-WimInfo -MountPath $mountDirectory
+$WimInfo = Get-WimInfo -MountPath $installMountDir
 $langCode = $WimInfo.Language
 $buildNumber = $WimInfo.BuildNumber
 
@@ -281,11 +279,11 @@ Start-Sleep -Milliseconds 1500
 foreach ($appxPattern in $appxPatternsToRemove) {
     try {
         Write-Host $appxPattern.TrimEnd('*')
-        $appxProvisionedPackages = Get-ProvisionedAppxPackage -Path $mountDirectory | Where-Object { $_.PackageName -like $appxPattern }
+        $appxProvisionedPackages = Get-ProvisionedAppxPackage -Path $installMountDir | Where-Object { $_.PackageName -like $appxPattern }
         foreach ($appxPackage in $appxProvisionedPackages) {
             $appxPackageName = $appxPackage.PackageName
             try {
-                dism /image:$mountDirectory /Remove-ProvisionedAppxPackage /PackageName:$appxPackageName > $null
+                dism /image:$installMountDir /Remove-ProvisionedAppxPackage /PackageName:$appxPackageName > $null
             }
             catch {
                 Write-LogMessage "Removing AppX package $appxPackageName failed: $_"
@@ -305,11 +303,11 @@ Start-Sleep -Milliseconds 1500
 foreach ($capabilityPattern in $capabilitiesToRemove) {
     try {
         Write-Host $capabilityPattern.TrimEnd('*')
-        $windowsCapabilities = Get-WindowsCapability -Path $mountDirectory | Where-Object { $_.Name -like $capabilityPattern }
+        $windowsCapabilities = Get-WindowsCapability -Path $installMountDir | Where-Object { $_.Name -like $capabilityPattern }
         foreach ($capability in $windowsCapabilities) {
             $capabilityName = $capability.Name
             try {
-                dism /image:$mountDirectory /Remove-Capability /CapabilityName:$capabilityName > $null
+                dism /image:$installMountDir /Remove-Capability /CapabilityName:$capabilityName > $null
             }
             catch {
                 Write-LogMessage "Removing capability $capabilityName failed: $_"
@@ -325,11 +323,11 @@ foreach ($capabilityPattern in $capabilitiesToRemove) {
 foreach ($windowsPackagePattern in $windowsPackagesToRemove) {
     try {
         Write-Host $windowsPackagePattern.TrimEnd('*')
-        $windowsPackages = Get-WindowsPackage -Path $mountDirectory | Where-Object { $_.PackageName -like $windowsPackagePattern }
+        $windowsPackages = Get-WindowsPackage -Path $installMountDir | Where-Object { $_.PackageName -like $windowsPackagePattern }
         foreach ($windowsPackage in $windowsPackages) {
             $windowsPackageName = $windowsPackage.PackageName
             try {
-                dism /image:$mountDirectory /Remove-Package /PackageName:$windowsPackageName > $null
+                dism /image:$installMountDir /Remove-Package /PackageName:$windowsPackageName > $null
             }
             catch {
                 Write-LogMessage "Removing Windows package $windowsPackageName failed: $_"
@@ -345,14 +343,14 @@ foreach ($windowsPackagePattern in $windowsPackagesToRemove) {
 # Write-LogMessage "Removing Recall"
 # Write-Host "`nRemoving Recall..."
 # Start-Sleep -Milliseconds 1500
-# dism /image:$mountDirectory /Disable-Feature /FeatureName:'Recall' /Remove > $null
+# dism /image:$installMountDir /Disable-Feature /FeatureName:'Recall' /Remove > $null
 # Write-Host "Done"
 
 # Remove OutlookPWA
 Write-LogMessage "Removing OutlookPWA"
 Write-Host "`nRemoving Outlook..." -ForegroundColor Cyan
 Start-Sleep -Milliseconds 1500
-Get-ChildItem "$mountDirectory\Windows\WinSxS\amd64_microsoft-windows-outlookpwa*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } > $null 2>&1
+Get-ChildItem "$installMountDir\Windows\WinSxS\amd64_microsoft-windows-outlookpwa*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } > $null 2>&1
 Write-Host "Done" -ForegroundColor Green
 
 # Setting Persmission
@@ -370,11 +368,11 @@ Start-Sleep -Milliseconds 1500
 Write-Host "`nRemoving OneDrive..." -ForegroundColor Cyan
 Start-Sleep -Milliseconds 1500
 Write-LogMessage "Defining OneDrive Setup file paths"
-$oneDriveSetupPath1 = Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\OneDriveSetup.exe'
-$oneDriveSetupPath2 = Join-Path -Path $mountDirectory -ChildPath 'Windows\SysWOW64\OneDriveSetup.exe'
-$oneDriveSetupPath3 = (Join-Path -Path $mountDirectory -ChildPath 'Windows\WinSxS\*microsoft-windows-onedrive-setup*\OneDriveSetup.exe' | Get-Item -ErrorAction SilentlyContinue).FullName
-$oneDriveSetupPath4 = (Get-ChildItem "$mountDirectory\Windows\WinSxS\amd64_microsoft-windows-onedrive-setup*" -Directory).FullName
-$oneDriveShortcut = Join-Path -Path $mountDirectory -ChildPath 'Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OneDrive.lnk'
+$oneDriveSetupPath1 = Join-Path -Path $installMountDir -ChildPath 'Windows\System32\OneDriveSetup.exe'
+$oneDriveSetupPath2 = Join-Path -Path $installMountDir -ChildPath 'Windows\SysWOW64\OneDriveSetup.exe'
+$oneDriveSetupPath3 = (Join-Path -Path $installMountDir -ChildPath 'Windows\WinSxS\*microsoft-windows-onedrive-setup*\OneDriveSetup.exe' | Get-Item -ErrorAction SilentlyContinue).FullName
+$oneDriveSetupPath4 = (Get-ChildItem "$installMountDir\Windows\WinSxS\amd64_microsoft-windows-onedrive-setup*" -Directory).FullName
+$oneDriveShortcut = Join-Path -Path $installMountDir -ChildPath 'Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OneDrive.lnk'
 
 Write-LogMessage "Removing OneDrive"
 Set-OwnAndRemove -Path $oneDriveSetupPath1
@@ -406,24 +404,20 @@ do {
 
         # Remove Edge Packages
         foreach ($pattern in $EDGEpatterns) {
-            $matchedPackages = Get-ProvisionedAppxPackage -Path $mountDirectory | 
+            $matchedPackages = Get-ProvisionedAppxPackage -Path $installMountDir | 
             Where-Object { $_.PackageName -like $pattern }
     
             foreach ($package in $matchedPackages) {
-                dism /image:$mountDirectory /Remove-ProvisionedAppxPackage /PackageName:$($package.PackageName) > $null
+                dism /image:$installMountDir /Remove-ProvisionedAppxPackage /PackageName:$($package.PackageName) > $null
             }
         }
 
         # Modifying reg keys
-        $softwarePath = Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\config\SOFTWARE'
-        $systemPath = Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\config\SYSTEM'
-        $ntuserPath = Join-Path -Path $mountDirectory -ChildPath 'Users\Default\ntuser.dat'
-        $defaultPath = Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\config\default'
-    
-        reg load HKLM\zSOFTWARE $softwarePath > $null 2>&1
-        reg load HKLM\zSYSTEM $systemPath > $null 2>&1
-        reg load HKLM\zNTUSER $ntuserPath > $null 2>&1
-        reg load HKLM\zDEFAULT $defaultPath > $null 2>&1
+        reg load HKLM\zSOFTWARE "$installMountDir\Windows\System32\config\SOFTWARE" > $null 2>&1
+        reg load HKLM\zSYSTEM "$installMountDir\Windows\System32\config\SYSTEM" > $null 2>&1
+        reg load HKLM\zNTUSER "$installMountDir\Users\Default\ntuser.dat" > $null 2>&1
+        reg load HKLM\zDEFAULT "$installMountDir\Windows\System32\config\default" > $null 2>&1
+
 
         reg delete "HKLM\zSOFTWARE\Microsoft\EdgeUpdate" /f > $null 2>&1
         reg delete "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge" /f > $null 2>&1
@@ -468,27 +462,27 @@ do {
         reg unload HKLM\zDEFAULT > $null 2>&1
 
         # Remove EDGE files
-        Remove-Item -Path "$mountDirectory\Program Files\Microsoft\Edge" -Recurse -Force > $null 2>&1
-        Remove-Item -Path "$mountDirectory\Program Files\Microsoft\EdgeCore" -Recurse -Force > $null 2>&1
-        Remove-Item -Path "$mountDirectory\Program Files\Microsoft\EdgeUpdate" -Recurse -Force > $null 2>&1
-        Remove-Item -Path "$mountDirectory\Program Files\Microsoft\EdgeWebView" -Recurse -Force > $null 2>&1
-        Remove-Item -Path "$mountDirectory\Program Files (x86)\Microsoft\Edge" -Recurse -Force > $null 2>&1
-        Remove-Item -Path "$mountDirectory\Program Files (x86)\Microsoft\EdgeCore" -Recurse -Force > $null 2>&1
-        Remove-Item -Path "$mountDirectory\Program Files (x86)\Microsoft\EdgeUpdate" -Recurse -Force > $null 2>&1
-        Remove-Item -Path "$mountDirectory\Program Files (x86)\Microsoft\EdgeWebView" -Recurse -Force > $null 2>&1
-        Remove-Item -Path "$mountDirectory\ProgramData\Microsoft\EdgeUpdate" -Recurse -Force > $null 2>&1
-        Get-ChildItem "$mountDirectory\ProgramData\Microsoft\Windows\AppRepository\Packages\Microsoft.MicrosoftEdge.Stable*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } > $null 2>&1
-        Get-ChildItem "$mountDirectory\ProgramData\Microsoft\Windows\AppRepository\Packages\Microsoft.MicrosoftEdgeDevToolsClient*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } > $null 2>&1
-        Get-ChildItem "$mountDirectory\Windows\WinSxS\*microsoft-edge-webview*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } > $null 2>&1
-        Set-OwnAndRemove -Path (Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\Microsoft-Edge-WebView')
-        Set-OwnAndRemove -Path (Join-Path -Path $mountDirectory -ChildPath 'Windows\SystemApps\Microsoft.Win32WebViewHost*' | Get-Item -ErrorAction SilentlyContinue).FullName
+        Remove-Item -Path "$installMountDir\Program Files\Microsoft\Edge" -Recurse -Force > $null 2>&1
+        Remove-Item -Path "$installMountDir\Program Files\Microsoft\EdgeCore" -Recurse -Force > $null 2>&1
+        Remove-Item -Path "$installMountDir\Program Files\Microsoft\EdgeUpdate" -Recurse -Force > $null 2>&1
+        Remove-Item -Path "$installMountDir\Program Files\Microsoft\EdgeWebView" -Recurse -Force > $null 2>&1
+        Remove-Item -Path "$installMountDir\Program Files (x86)\Microsoft\Edge" -Recurse -Force > $null 2>&1
+        Remove-Item -Path "$installMountDir\Program Files (x86)\Microsoft\EdgeCore" -Recurse -Force > $null 2>&1
+        Remove-Item -Path "$installMountDir\Program Files (x86)\Microsoft\EdgeUpdate" -Recurse -Force > $null 2>&1
+        Remove-Item -Path "$installMountDir\Program Files (x86)\Microsoft\EdgeWebView" -Recurse -Force > $null 2>&1
+        Remove-Item -Path "$installMountDir\ProgramData\Microsoft\EdgeUpdate" -Recurse -Force > $null 2>&1
+        Get-ChildItem "$installMountDir\ProgramData\Microsoft\Windows\AppRepository\Packages\Microsoft.MicrosoftEdge.Stable*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } > $null 2>&1
+        Get-ChildItem "$installMountDir\ProgramData\Microsoft\Windows\AppRepository\Packages\Microsoft.MicrosoftEdgeDevToolsClient*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } > $null 2>&1
+        Get-ChildItem "$installMountDir\Windows\WinSxS\*microsoft-edge-webview*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } > $null 2>&1
+        Set-OwnAndRemove -Path (Join-Path -Path $installMountDir -ChildPath 'Windows\System32\Microsoft-Edge-WebView')
+        Set-OwnAndRemove -Path (Join-Path -Path $installMountDir -ChildPath 'Windows\SystemApps\Microsoft.Win32WebViewHost*' | Get-Item -ErrorAction SilentlyContinue).FullName
 
         # Removing EDGE-Task
-        Get-ChildItem -Path "$mountDirectory\Windows\System32\Tasks\MicrosoftEdge*" | Where-Object { $_ } | ForEach-Object { Set-OwnAndRemove -Path $_ } > $null 2>&1
+        Get-ChildItem -Path "$installMountDir\Windows\System32\Tasks\MicrosoftEdge*" | Where-Object { $_ } | ForEach-Object { Set-OwnAndRemove -Path $_ } > $null 2>&1
 
         # For Windows 10 (Legacy EDGE)
         if ($buildNumber -lt 22000) {
-            Get-ChildItem -Path "$mountDirectory\Windows\SystemApps\Microsoft.MicrosoftEdge*" | Where-Object { $_ } | ForEach-Object { Set-OwnAndRemove -Path $_ } > $null 2>&1
+            Get-ChildItem -Path "$installMountDir\Windows\SystemApps\Microsoft.MicrosoftEdge*" | Where-Object { $_ } | ForEach-Object { Set-OwnAndRemove -Path $_ } > $null 2>&1
         }
     
         Write-Host "Microsoft Edge has been removed." -ForegroundColor Green
@@ -506,20 +500,13 @@ do {
 
 Start-Sleep -Milliseconds 1800
 Write-Host "`nLoading Registry..." -ForegroundColor Cyan
-Write-LogMessage "Defining registry paths"
-$componentsPath = Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\config\COMPONENTS'
-$defaultPath = Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\config\default'
-$ntuserPath = Join-Path -Path $mountDirectory -ChildPath 'Users\Default\ntuser.dat'
-$softwarePath = Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\config\SOFTWARE'
-$systemPath = Join-Path -Path $mountDirectory -ChildPath 'Windows\System32\config\SYSTEM'
-
-# Load registry
 Write-LogMessage "Loading registry"
-reg load HKLM\zCOMPONENTS $componentsPath > $null 2>&1
-reg load HKLM\zDEFAULT $defaultPath > $null 2>&1
-reg load HKLM\zNTUSER $ntuserPath > $null 2>&1
-reg load HKLM\zSOFTWARE $softwarePath > $null 2>&1
-reg load HKLM\zSYSTEM $systemPath > $null 2>&1
+reg load HKLM\zCOMPONENTS "$installMountDir\Windows\System32\config\COMPONENTS" > $null 2>&1
+reg load HKLM\zDEFAULT "$installMountDir\Windows\System32\config\default" > $null 2>&1
+reg load HKLM\zNTUSER "$installMountDir\Users\Default\ntuser.dat" > $null 2>&1
+reg load HKLM\zSOFTWARE "$installMountDir\Windows\System32\config\SOFTWARE" > $null 2>&1
+reg load HKLM\zSYSTEM "$installMountDir\Windows\System32\config\SYSTEM" > $null 2>&1
+
 
 # Setting Permissions
 try {
@@ -636,16 +623,6 @@ reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OOBE" /v "DisablePrivacyExper
 reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v "BypassNRO" /t REG_DWORD /d "1" /f > $null 2>&1
 Copy-Item -Path $autounattendXmlPath -Destination $destinationPath -Force
 
-# Disable TPM CHeck
-Write-Host "Disabling TPM Check"
-reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassTPMCheck" /t REG_DWORD /d "1" /f > $null 2>&1
-reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassSecureBootCheck" /t REG_DWORD /d "1" /f > $null 2>&1
-reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassStorageCheck" /t REG_DWORD /d "1" /f > $null 2>&1
-reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassCPUCheck" /t REG_DWORD /d "1" /f > $null 2>&1
-reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassRAMCheck" /t REG_DWORD /d "1" /f > $null 2>&1
-reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassDiskCheck" /t REG_DWORD /d "1" /f > $null 2>&1
-reg add "HKLM\zSYSTEM\Setup\MoSetup" /v "AllowUpgradesWithUnsupportedTPMOrCPU" /t REG_DWORD /d "1" /f > $null 2>&1
-
 # Prevents Dev Home Installation
 Write-Host "Disabling useless junks"
 reg delete "HKLM\zSOFTWARE\Microsoft\WindowsUpdate\Orchestrator\UScheduler_Oobe\DevHomeUpdate" /f > $null 2>&1
@@ -689,6 +666,61 @@ reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCach
 reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\Microsoft\Windows\Customer Experience Improvement Program\Consolidator" /f > $null 2>&1
 reg delete "HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip" /f > $null 2>&1
 
+# Disable TPM CHeck
+Write-Host
+do {
+    $TPMConfirm = Read-Host "Bypass System Requirments Check? (Y/N)"
+    $TPMConfirm = $TPMConfirm.ToUpper()
+    if ($TPMConfirm -eq 'Y') {
+        Write-Host "Disabling TPM Check" -ForegroundColor Cyan
+        reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassTPMCheck" /t REG_DWORD /d "1" /f > $null 2>&1
+        reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassSecureBootCheck" /t REG_DWORD /d "1" /f > $null 2>&1
+        reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassStorageCheck" /t REG_DWORD /d "1" /f > $null 2>&1
+        reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassCPUCheck" /t REG_DWORD /d "1" /f > $null 2>&1
+        reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassRAMCheck" /t REG_DWORD /d "1" /f > $null 2>&1
+        reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassDiskCheck" /t REG_DWORD /d "1" /f > $null 2>&1
+        reg add "HKLM\zSYSTEM\Setup\MoSetup" /v "AllowUpgradesWithUnsupportedTPMOrCPU" /t REG_DWORD /d "1" /f > $null 2>&1
+        
+        try {
+            $bootWimPath = Join-Path $destinationPath "sources\boot.wim"
+            $bootMountDir = "$env:SystemDrive\WIDTemp\mountdir\bootWIM"
+            New-Item -ItemType Directory -Path $bootMountDir > $null 2>&1
+            dism /mount-image /imagefile:$bootWimPath /index:2 /mountdir:$bootMountDir | Out-Null
+
+            reg load HKLM\xDEFAULT "$bootMountDir\Windows\System32\config\default" > $null 2>&1
+            reg load HKLM\xNTUSER "$bootMountDir\Users\Default\ntuser.dat" > $null 2>&1
+            reg load HKLM\xSYSTEM "$bootMountDir\Windows\System32\config\SYSTEM" > $null 2>&1
+
+            reg add "HKLM\xSYSTEM\Setup\LabConfig" /v "BypassTPMCheck" /t REG_DWORD /d 1 /f > $null 2>&1
+            reg add "HKLM\xSYSTEM\Setup\LabConfig" /v "BypassSecureBootCheck" /t REG_DWORD /d 1 /f > $null 2>&1
+            reg add "HKLM\xSYSTEM\Setup\LabConfig" /v "BypassStorageCheck" /t REG_DWORD /d 1 /f > $null 2>&1
+            reg add "HKLM\xSYSTEM\Setup\LabConfig" /v "BypassCPUCheck" /t REG_DWORD /d 1 /f > $null 2>&1
+            reg add "HKLM\xSYSTEM\Setup\LabConfig" /v "BypassRAMCheck" /t REG_DWORD /d 1 /f > $null 2>&1
+            reg add "HKLM\xSYSTEM\Setup\LabConfig" /v "BypassDiskCheck" /t REG_DWORD /d "1" /f > $null 2>&1
+            reg add "HKLM\xSYSTEM\Setup\MoSetup" /v "AllowUpgradesWithUnsupportedTPMOrCPU" /t REG_DWORD /d 1 /f > $null 2>&1
+
+            reg unload HKLM\xDEFAULT > $null 2>&1
+            reg unload HKLM\xNTUSER > $null 2>&1
+            reg unload HKLM\xSYSTEM > $null 2>&1
+
+            dism /Unmount-Image /MountDir:$bootMountDir /Commit > $null 2>&1
+            Write-Host "Done" -ForegroundColor Green
+        }
+        catch {
+            Write-LogMessage "Failed to mount boot.wim: $_"
+        }
+        break
+    }
+    elseif ($TPMConfirm -eq 'N') {
+        Write-Host "Cancelled." -ForegroundColor Red
+        break
+    }
+    else {
+        Write-Host "Invalid input. Please enter 'Y' or 'N'." -ForegroundColor Yellow
+    }
+} while ($true)
+
+# Bring back user folders
 if ($buildNumber -ge 22000) {
     Write-Host
     do {
@@ -739,19 +771,19 @@ reg unload HKLM\zSYSTEM > $null 2>&1
 Start-Sleep -Milliseconds 1000
 Write-Host "`nCleaning up image..."
 Write-LogMessage "Cleaning up image"
-dism /image:$mountDirectory /Cleanup-Image /StartComponentCleanup /ResetBase > $null
+dism /image:$installMountDir /Cleanup-Image /StartComponentCleanup /ResetBase > $null
 
 Start-Sleep -Milliseconds 1000
 Write-Host "`nUnmounting and Exporting image..."
 Write-LogMessage "Unmounting image"
 try {
-    $unmountProcess = Start-Process -FilePath "dism" -ArgumentList "/unmount-image", "/mountdir:$mountDirectory", "/commit" -PassThru -Wait -NoNewWindow
+    $unmountProcess = Start-Process -FilePath "dism" -ArgumentList "/unmount-image", "/mountdir:$installMountDir", "/commit" -PassThru -Wait -NoNewWindow
     if ($unmountProcess.ExitCode -ne 0) {
         Write-LogMessage "Failed to unmount image. Exit code: $($unmountProcess.ExitCode)"
         Write-Host "`nFailed to Unmount the Image. Check Logs for more info." -ForegroundColor Red
         Write-Host "Close all the Folders opened in the mountdir to complete the Script."
         Write-Host "Run the following code in Powershell(as admin) to unmount the broken image: "
-        Write-Host "dism /unmount-image /mountdir:$mountDirectory /discard" -ForegroundColor Yellow
+        Write-Host "dism /unmount-image /mountdir:$installMountDir /discard" -ForegroundColor Yellow
         Read-Host -Prompt "Press Enter to exit"
         Write-LogMessage "Exiting Script"
         Exit
@@ -898,13 +930,14 @@ $missingFiles = $reqFiles | Where-Object { -not (Test-Path (Join-Path $isoMountP
 
 Dismount-DiskImage -ImagePath "$ISOFile" | Out-Null
 
+Start-Sleep -Milliseconds 1000
 if ($missingFiles) {
     Write-LogMessage "ISO verification failed - missing files: $($missingFiles -join ', ')"
     Write-Host "`nError: Created ISO is missing critical files" -ForegroundColor Red
-    Exit
 }
-Write-LogMessage "ISO verification successful"
+else {
+    Write-LogMessage "ISO verification successful"
+    Write-Host "`nScript Completed. Can find the ISO in `"$scriptDirectory"`" -ForegroundColor Green
+}
 
-Start-Sleep -Milliseconds 1500
-Write-Host "`nScript Completed. Can find the ISO in `"$scriptDirectory"`" -ForegroundColor Green
-Read-Host -Prompt "Done. Press Enter to exit"
+Read-Host -Prompt "Press Enter to exit"
