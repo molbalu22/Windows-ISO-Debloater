@@ -153,13 +153,17 @@ if (-not (Test-Path $installWimPath)) {
         Write-LogMessage "install.esd found. Converting..."
         Start-Sleep -Milliseconds 500
         try {
-            dism /Get-WimInfo /wimfile:$installEsdPath
+            $wimInfo = Get-WindowsImage -ImagePath $installEsdPath
+            Write-Host
+            foreach ($image in $wimInfo) {
+                "$($image.ImageIndex). $($image.ImageName)"
+            }
             Write-Host
             $EsdIndex = Read-Host -Prompt "Enter the index to convert and mount"
             Write-LogMessage "Converting and Mounting image: $EsdIndex"
-            dism /Export-Image /SourceImageFile:$installEsdPath /SourceIndex:$EsdIndex /DestinationImageFile:$installWimPath /Compress:max /CheckIntegrity
+            Export-WindowsImage -SourceImagePath $installEsdPath -SourceIndex $EsdIndex -DestinationImagePath $installWimPath -CompressionType Maximum -CheckIntegrity
             Remove-Item $installEsdPath -Force
-            dism /mount-image /imagefile:$installWimPath /index:1 /mountdir:$installMountDir
+            Mount-WindowsImage -ImagePath $installWimPath -Index 1 -Path $installMountDir
         }
         catch {
             Write-LogMessage "Failed to mount image: $_"
@@ -167,25 +171,23 @@ if (-not (Test-Path $installWimPath)) {
         }
     }
     else {
-        Write-Host "Neither install.wim nor install.esd found. Make sure to mount the correct ISO"  -ForegroundColor Red
+        Write-Host "Neither install.wim nor install.esd found. Make sure to mount the correct ISO" -ForegroundColor Red
         Exit
     }
 }
 else {
     Write-Host "`nDetails for image: $installWimPath"
     Write-LogMessage "Getting image info"
-    $WimInfo = dism /Get-WimInfo /wimfile:$installWimPath 2>$null | Where-Object { $_ -match "^(Index : |Name : )" } | ForEach-Object { $_.Trim() }
-    for ($i = 0; $i -lt $WimInfo.Count; $i += 2) {
-        $Index = $WimInfo[$i] -replace "Index : "
-        $Name = $WimInfo[$i+1] -replace "Name : "
-        "$Index. $Name"
-    }
-    Write-Host
-    $WimIndex = Read-Host -Prompt "Enter the index to mount"
-    Write-LogMessage "Mounting image: $WimIndex"
-    
     try {
-        dism /mount-image /imagefile:$installWimPath /index:$WimIndex /mountdir:$installMountDir
+        $wimInfo = Get-WindowsImage -ImagePath $installWimPath
+        foreach ($image in $wimInfo) {
+            "$($image.ImageIndex). $($image.ImageName)"
+        }
+        Write-Host
+        $WimIndex = Read-Host -Prompt "Enter the index to mount"
+        Write-LogMessage "Mounting image: $WimIndex"
+        
+        Mount-WindowsImage -ImagePath $installWimPath -Index $WimIndex -Path $installMountDir
     }
     catch {
         Write-LogMessage "Failed to mount image: $_"
@@ -287,7 +289,7 @@ foreach ($appxPattern in $appxPatternsToRemove) {
         foreach ($appxPackage in $appxProvisionedPackages) {
             $appxPackageName = $appxPackage.PackageName
             try {
-                dism /image:$installMountDir /Remove-ProvisionedAppxPackage /PackageName:$appxPackageName > $null
+                Remove-ProvisionedAppxPackage -Path $installMountDir -PackageName $appxPackageName > $null 2>&1
             }
             catch {
                 Write-LogMessage "Removing AppX package $appxPackageName failed: $_"
@@ -311,7 +313,7 @@ foreach ($capabilityPattern in $capabilitiesToRemove) {
         foreach ($capability in $windowsCapabilities) {
             $capabilityName = $capability.Name
             try {
-                dism /image:$installMountDir /Remove-Capability /CapabilityName:$capabilityName > $null
+                Remove-WindowsCapability -Path $installMountDir -Name $capabilityName > $null 2>&1
             }
             catch {
                 Write-LogMessage "Removing capability $capabilityName failed: $_"
@@ -331,7 +333,7 @@ foreach ($windowsPackagePattern in $windowsPackagesToRemove) {
         foreach ($windowsPackage in $windowsPackages) {
             $windowsPackageName = $windowsPackage.PackageName
             try {
-                dism /image:$installMountDir /Remove-Package /PackageName:$windowsPackageName > $null
+                Remove-WindowsPackage -Path $installMountDir -PackageName $windowsPackageName > $null 2>&1
             }
             catch {
                 Write-LogMessage "Removing Windows package $windowsPackageName failed: $_"
@@ -347,7 +349,7 @@ foreach ($windowsPackagePattern in $windowsPackagesToRemove) {
 # Write-LogMessage "Removing Recall"
 # Write-Host "`nRemoving Recall..."
 # Start-Sleep -Milliseconds 1500
-# dism /image:$installMountDir /Disable-Feature /FeatureName:'Recall' /Remove > $null
+# dism /image:$installMountDir /Disable-Feature /FeatureName:'Recall' /Remove > $null 2>&1
 # Write-Host "Done"
 
 # Remove OutlookPWA
@@ -412,7 +414,7 @@ do {
             Where-Object { $_.PackageName -like $pattern }
     
             foreach ($package in $matchedPackages) {
-                dism /image:$installMountDir /Remove-ProvisionedAppxPackage /PackageName:$($package.PackageName) > $null
+                Remove-ProvisionedAppxPackage -Path $installMountDir -PackageName $package.PackageName > $null 2>&1
             }
         }
 
@@ -689,7 +691,7 @@ do {
             $bootWimPath = Join-Path $destinationPath "sources\boot.wim"
             $bootMountDir = "$env:SystemDrive\WIDTemp\mountdir\bootWIM"
             New-Item -ItemType Directory -Path $bootMountDir > $null 2>&1
-            dism /mount-image /imagefile:$bootWimPath /index:2 /mountdir:$bootMountDir | Out-Null
+            Mount-WindowsImage -ImagePath $bootWimPath -Index 2 -Path $bootMountDir > $null 2>&1
 
             reg load HKLM\xDEFAULT "$bootMountDir\Windows\System32\config\default" > $null 2>&1
             reg load HKLM\xNTUSER "$bootMountDir\Users\Default\ntuser.dat" > $null 2>&1
@@ -707,7 +709,7 @@ do {
             reg unload HKLM\xNTUSER > $null 2>&1
             reg unload HKLM\xSYSTEM > $null 2>&1
 
-            dism /Unmount-Image /MountDir:$bootMountDir /Commit > $null 2>&1
+            Dismount-WindowsImage -Path $bootMountDir -Save > $null 2>&1
             Write-Host "Done" -ForegroundColor Green
         }
         catch {
@@ -775,26 +777,23 @@ reg unload HKLM\zSYSTEM > $null 2>&1
 Start-Sleep -Milliseconds 1000
 Write-Host "`nCleaning up image..."
 Write-LogMessage "Cleaning up image"
-dism /image:$installMountDir /Cleanup-Image /StartComponentCleanup /ResetBase > $null
+Repair-WindowsImage -Path $installMountDir -StartComponentCleanup -ResetBase
 
 Start-Sleep -Milliseconds 1000
 Write-Host "`nUnmounting and Exporting image..."
 Write-LogMessage "Unmounting image"
 try {
-    $unmountProcess = Start-Process -FilePath "dism" -ArgumentList "/unmount-image", "/mountdir:$installMountDir", "/commit" -PassThru -Wait -NoNewWindow
-    if ($unmountProcess.ExitCode -ne 0) {
-        Write-LogMessage "Failed to unmount image. Exit code: $($unmountProcess.ExitCode)"
-        Write-Host "`nFailed to Unmount the Image. Check Logs for more info." -ForegroundColor Red
-        Write-Host "Close all the Folders opened in the mountdir to complete the Script."
-        Write-Host "Run the following code in Powershell(as admin) to unmount the broken image: "
-        Write-Host "dism /unmount-image /mountdir:$installMountDir /discard" -ForegroundColor Yellow
-        Read-Host -Prompt "Press Enter to exit"
-        Write-LogMessage "Exiting Script"
-        Exit
-    }
+    Dismount-WindowsImage -Path $installMountDir -Save
+    Write-LogMessage "Image unmounted successfully"
 }
 catch {
     Write-LogMessage "Failed to unmount image: $_"
+    Write-Host "`nFailed to Unmount the Image. Check Logs for more info." -ForegroundColor Red
+    Write-Host "Close all the Folders opened in the mountdir to complete the Script."
+    Write-Host "Run the following code in Powershell(as admin) to unmount the broken image: "
+    Write-Host "Dismount-WindowsImage -Path $installMountDir -Discard" -ForegroundColor Yellow
+    Read-Host -Prompt "Press Enter to exit"
+    Write-LogMessage "Exiting Script"
     Exit
 }
 
@@ -805,13 +804,13 @@ $compressRecovery = Read-Host "Compress install.wim to save disk space? (Y/N)"
 $tempWimPath = "$destinationPath\sources\install_temp.wim"
 
 if ($compressRecovery -eq 'Y' -or $compressRecovery -eq 'y') {
-    dism /Export-Image /SourceImageFile:"$destinationPath\sources\install.wim" /SourceIndex:$SourceIndex /DestinationImageFile:"$tempWimPath" /Compress:recovery /CheckIntegrity
+    Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $SourceIndex -DestinationImagePath $tempWimPath -CompressionType Recovery -CheckIntegrity
     Write-Host "`nCompression completed" -ForegroundColor Green
     Write-LogMessage "Compression completed"
 }
 else {
     Write-Host "Compression skipped"
-    dism /Export-Image /SourceImageFile:"$destinationPath\sources\install.wim" /SourceIndex:$SourceIndex /DestinationImageFile:"$tempWimPath" /Compress:max /CheckIntegrity
+    Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $SourceIndex -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity
 }
 
 if (Test-Path $tempWimPath) {
@@ -944,7 +943,7 @@ $isoMountPoint = "${verifyDrive}:\"
 $reqFiles = @("sources\install.wim", "sources\boot.wim", "boot\bcd", "boot\boot.sdi", "bootmgr", "bootmgr.efi", "efi\microsoft\boot\efisys.bin")
 $missingFiles = $reqFiles | Where-Object { -not (Test-Path (Join-Path $isoMountPoint $_)) }
 
-Dismount-DiskImage -ImagePath "$ISOFile" | Out-Null
+Dismount-DiskImage -ImagePath "$ISOFile" > $null 2>&1
 
 Start-Sleep -Milliseconds 1000
 if ($missingFiles) {
