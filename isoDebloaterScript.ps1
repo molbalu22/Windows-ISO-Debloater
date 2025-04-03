@@ -22,7 +22,7 @@ Write-Host $asciiArt -ForegroundColor Cyan
 Start-Sleep -Milliseconds 1200
 Write-Host "Starting Windows ISO Debloater Script..." -ForegroundColor Green
 Start-Sleep -Milliseconds 1500
-Write-Host "`n*Importent Notes: " -ForegroundColor Yellow
+Write-Host "`n*Important Notes: " -ForegroundColor Yellow
 Write-Host "    1. There will be some prompts for the user." -ForegroundColor White
 Write-Host "    2. Ensure that you have administrative privileges to run this script." -ForegroundColor White
 Write-Host "    3. Review the script before execution to understand its actions." -ForegroundColor White
@@ -385,7 +385,7 @@ Start-Sleep -Milliseconds 1500
 # Get-ChildItem "$installMountDir\Windows\WinSxS\amd64_microsoft-windows-outlookpwa*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } 2>&1 | Write-Log
 Write-Host "Done" -ForegroundColor Green
 
-# Setting Persmission
+# Setting Permissions
 function Enable-Privilege {
     param([ValidateSet('SeAssignPrimaryTokenPrivilege', 'SeAuditPrivilege', 'SeBackupPrivilege', 'SeChangeNotifyPrivilege', 'SeCreateGlobalPrivilege', 'SeCreatePagefilePrivilege', 'SeCreatePermanentPrivilege', 'SeCreateSymbolicLinkPrivilege', 'SeCreateTokenPrivilege', 'SeDebugPrivilege', 'SeEnableDelegationPrivilege', 'SeImpersonatePrivilege', 'SeIncreaseBasePriorityPrivilege', 'SeIncreaseQuotaPrivilege', 'SeIncreaseWorkingSetPrivilege', 'SeLoadDriverPrivilege', 'SeLockMemoryPrivilege', 'SeMachineAccountPrivilege', 'SeManageVolumePrivilege', 'SeProfileSingleProcessPrivilege', 'SeRelabelPrivilege', 'SeRemoteShutdownPrivilege', 'SeRestorePrivilege', 'SeSecurityPrivilege', 'SeShutdownPrivilege', 'SeSyncAgentPrivilege', 'SeSystemEnvironmentPrivilege', 'SeSystemProfilePrivilege', 'SeSystemtimePrivilege', 'SeTakeOwnershipPrivilege', 'SeTcbPrivilege', 'SeTimeZonePrivilege', 'SeTrustedCredManAccessPrivilege', 'SeUndockPrivilege', 'SeUnsolicitedInputPrivilege')]$Privilege, $ProcessId = $pid, [Switch]$Disable)
     $def = @'
@@ -445,53 +445,60 @@ do {
         }
 
         # Modifying reg keys
-        reg load HKLM\zSOFTWARE "$installMountDir\Windows\System32\config\SOFTWARE" 2>&1 | Write-Log
-        reg load HKLM\zSYSTEM "$installMountDir\Windows\System32\config\SYSTEM" 2>&1 | Write-Log
-        reg load HKLM\zNTUSER "$installMountDir\Users\Default\ntuser.dat" 2>&1 | Write-Log
-        reg load HKLM\zDEFAULT "$installMountDir\Windows\System32\config\default" 2>&1 | Write-Log
+        try {
+            reg load HKLM\zSOFTWARE "$installMountDir\Windows\System32\config\SOFTWARE" 2>&1 | Write-Log
+            reg load HKLM\zSYSTEM "$installMountDir\Windows\System32\config\SYSTEM" 2>&1 | Write-Log
+            reg load HKLM\zNTUSER "$installMountDir\Users\Default\ntuser.dat" 2>&1 | Write-Log
+            reg load HKLM\zDEFAULT "$installMountDir\Windows\System32\config\default" 2>&1 | Write-Log
 
-
-        reg delete "HKLM\zSOFTWARE\Microsoft\EdgeUpdate" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge" /f 2>&1 | Write-Log
-        reg delete "HKLM\zDEFAULT\Software\Microsoft\EdgeUpdate" /f 2>&1 | Write-Log
-        reg delete "HKLM\zNTUSER\Software\Microsoft\EdgeUpdate" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSOFTWARE\Microsoft\Active Setup\Installed Components\{9459C573-B17A-45AE-9F64-1857B5D58CEE}" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Edge" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSOFTWARE\WOW6432Node\Microsoft\EdgeUpdate" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSYSTEM\CurrentControlSet\Services\edgeupdate" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSYSTEM\ControlSet001\Services\edgeupdate" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSYSTEM\CurrentControlSet\Services\edgeupdatem" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSYSTEM\ControlSet001\Services\edgeupdatem" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge" /f 2>&1 | Write-Log
-        reg delete "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Update" /f 2>&1 | Write-Log
-        reg add "HKLM\zSOFTWARE\Microsoft\MicrosoftEdge\Main" /v "AllowPrelaunch" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-        reg add "HKLM\zSOFTWARE\Policies\Microsoft\MicrosoftEdge\Main" /v "AllowPrelaunch" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-        reg add "HKLM\zNTUSER\Software\Microsoft\MicrosoftEdge\Main" /v "AllowPrelaunch" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-        reg add "HKLM\zNTUSER\Software\Policies\Microsoft\MicrosoftEdge\Main" /v "AllowPrelaunch" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-        reg add "HKLM\zSOFTWARE\Microsoft\MicrosoftEdge\TabPreloader" /v "AllowTabPreloading" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-        reg add "HKLM\zSOFTWARE\Policies\Microsoft\MicrosoftEdge\TabPreloader" /v "AllowTabPreloading" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-        reg add "HKLM\zNTUSER\Software\Microsoft\MicrosoftEdge\TabPreloader" /v "AllowTabPreloading" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-        reg add "HKLM\zNTUSER\Software\Policies\Microsoft\MicrosoftEdge\TabPreloader" /v "AllowTabPreloading" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-        reg add "HKLM\zSOFTWARE\Policies\Microsoft\EdgeUpdate" /v "UpdateDefault" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
-    
-        # Disable Edge updates and installation
-        $registryKeys = @(
-            "HKLM\zSOFTWARE\Microsoft\EdgeUpdate",
-            "HKLM\zSOFTWARE\Policies\Microsoft\EdgeUpdate",
-            "HKLM\zSOFTWARE\WOW6432Node\Microsoft\EdgeUpdate",
-            "HKLM\zNTUSER\Software\Microsoft\EdgeUpdate",
-            "HKLM\zNTUSER\Software\Policies\Microsoft\EdgeUpdate"
-        )
-        foreach ($key in $registryKeys) {
-            reg add "$key" /v "DoNotUpdateToEdgeWithChromium" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-            reg add "$key" /v "UpdaterExperimentationAndConfigurationServiceControl" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-            reg add "$key" /v "InstallDefault" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            # Registry operations
+            reg delete "HKLM\zSOFTWARE\Microsoft\EdgeUpdate" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge" /f 2>&1 | Write-Log
+            reg delete "HKLM\zDEFAULT\Software\Microsoft\EdgeUpdate" /f 2>&1 | Write-Log
+            reg delete "HKLM\zNTUSER\Software\Microsoft\EdgeUpdate" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSOFTWARE\Microsoft\Active Setup\Installed Components\{9459C573-B17A-45AE-9F64-1857B5D58CEE}" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Edge" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSOFTWARE\WOW6432Node\Microsoft\EdgeUpdate" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSYSTEM\CurrentControlSet\Services\edgeupdate" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSYSTEM\ControlSet001\Services\edgeupdate" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSYSTEM\CurrentControlSet\Services\edgeupdatem" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSYSTEM\ControlSet001\Services\edgeupdatem" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge" /f 2>&1 | Write-Log
+            reg delete "HKLM\zSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Update" /f 2>&1 | Write-Log
+            reg add "HKLM\zSOFTWARE\Microsoft\MicrosoftEdge\Main" /v "AllowPrelaunch" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            reg add "HKLM\zSOFTWARE\Policies\Microsoft\MicrosoftEdge\Main" /v "AllowPrelaunch" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            reg add "HKLM\zNTUSER\Software\Microsoft\MicrosoftEdge\Main" /v "AllowPrelaunch" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            reg add "HKLM\zNTUSER\Software\Policies\Microsoft\MicrosoftEdge\Main" /v "AllowPrelaunch" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            reg add "HKLM\zSOFTWARE\Microsoft\MicrosoftEdge\TabPreloader" /v "AllowTabPreloading" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            reg add "HKLM\zSOFTWARE\Policies\Microsoft\MicrosoftEdge\TabPreloader" /v "AllowTabPreloading" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            reg add "HKLM\zNTUSER\Software\Microsoft\MicrosoftEdge\TabPreloader" /v "AllowTabPreloading" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            reg add "HKLM\zNTUSER\Software\Policies\Microsoft\MicrosoftEdge\TabPreloader" /v "AllowTabPreloading" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            reg add "HKLM\zSOFTWARE\Policies\Microsoft\EdgeUpdate" /v "UpdateDefault" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+        
+            # Disable Edge updates and installation
+            $registryKeys = @(
+                "HKLM\zSOFTWARE\Microsoft\EdgeUpdate",
+                "HKLM\zSOFTWARE\Policies\Microsoft\EdgeUpdate",
+                "HKLM\zSOFTWARE\WOW6432Node\Microsoft\EdgeUpdate",
+                "HKLM\zNTUSER\Software\Microsoft\EdgeUpdate",
+                "HKLM\zNTUSER\Software\Policies\Microsoft\EdgeUpdate"
+            )
+            foreach ($key in $registryKeys) {
+                reg add "$key" /v "DoNotUpdateToEdgeWithChromium" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+                reg add "$key" /v "UpdaterExperimentationAndConfigurationServiceControl" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+                reg add "$key" /v "InstallDefault" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+            }
         }
-    
-        reg unload HKLM\zSOFTWARE 2>&1 | Write-Log
-        reg unload HKLM\zSYSTEM 2>&1 | Write-Log
-        reg unload HKLM\zNTUSER 2>&1 | Write-Log
-        reg unload HKLM\zDEFAULT 2>&1 | Write-Log
+        catch {
+            Write-Log -msg "Error modifying registry: $_"
+        }
+        finally {
+            # Always unload registry hives regardless of errors
+            reg unload HKLM\zSOFTWARE 2>&1 | Write-Log
+            reg unload HKLM\zSYSTEM 2>&1 | Write-Log
+            reg unload HKLM\zNTUSER 2>&1 | Write-Log
+            reg unload HKLM\zDEFAULT 2>&1 | Write-Log
+        }
 
         # Remove EDGE files
         Remove-Item -Path "$installMountDir\Program Files\Microsoft\Edge" -Recurse -Force 2>&1 | Write-Log
@@ -653,7 +660,15 @@ reg add "HKLM\zNTUSER\Software\Microsoft\GameBar" /v "AutoGameModeEnabled" /t RE
 Write-Host "Tweaking OOBE Settings"
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OOBE" /v "DisablePrivacyExperience" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v "BypassNRO" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-Copy-Item -Path $autounattendXmlPath -Destination $destinationPath -Force
+
+# Check if Autounattend.xml exists before copying
+if (Test-Path -Path $autounattendXmlPath) {
+    Write-Log -msg "Copying Autounattend.xml"
+    Copy-Item -Path $autounattendXmlPath -Destination $destinationPath -Force
+} else {
+    Write-Host "Warning: Autounattend.xml not found at $autounattendXmlPath" -ForegroundColor Yellow
+    Write-Log -msg "Warning: Autounattend.xml not found at $autounattendXmlPath"
+}
 
 # Prevents Dev Home Installation
 Write-Host "Disabling useless junks"
@@ -880,9 +895,25 @@ if ($exportSuccess) {
     Exit
 }
 
-Write-Log -msg "Specifying boot data"
-$bootData = '2#p0,e,b"{0}"#pEF,e,b"{1}"' -f "$destinationPath\boot\etfsboot.com", "$destinationPath\efi\Microsoft\boot\efisys.bin"
-Write-Log -msg "Boot data set: $bootData"
+# Verify the WIM file is accessible and valid
+try {
+    $wimInfo = Get-WindowsImage -ImagePath "$destinationPath\sources\install.wim" -ErrorAction Stop
+    if ($wimInfo) {
+        Write-Host "WIM file validation successful: $($wimInfo.Count) images found" -ForegroundColor Green
+        Write-Log -msg "WIM validation passed: $($wimInfo.Count) images found"
+        
+        # Force a filesystem sync to ensure all changes are written to disk
+        [System.IO.File]::OpenWrite("$destinationPath\sources\install.wim").Close()
+        # Add a small delay to ensure file operations are complete
+        Start-Sleep -Seconds 3
+    } else {
+        Write-Host "Warning: WIM file validation returned no images" -ForegroundColor Yellow
+        Write-Log -msg "WIM validation warning: No images returned"
+    }
+} catch {
+    Write-Host "Error: WIM file validation failed - $($_)" -ForegroundColor Red
+    Write-Log -msg "WIM validation failed: $_"
+}
 
 Write-Log -msg "Checking required files"
 Write-Host
@@ -967,12 +998,66 @@ Start-Sleep -Milliseconds 1000
 Write-Host "`nGenerating ISO..." -ForegroundColor Cyan
 Write-Log -msg "Generating ISO"
 try {
-    # $null = Start-Process -FilePath "$Oscdimg" -ArgumentList @("-bootdata:$BootData", '-m', '-o', '-h', '-l', '-u1', $destinationPath , "$ISOFile") -PassThru -Wait -NoNewWindow
-    $null = Start-Process -FilePath "$Oscdimg" -ArgumentList @("-bootdata:$BootData", '-m', '-o', '-h', '-u2', '-udfver102', $destinationPath , "$ISOFile") -PassThru -Wait -NoNewWindow
-    Write-Log -msg "ISO successfully created"
+    $etfsbootPath = "$destinationPath\boot\etfsboot.com"
+    $efisysPath = "$destinationPath\efi\Microsoft\boot\efisys.bin"
+    $bootData = "2#p0,e,b`"$etfsbootPath`"#pEF,e,b`"$efisysPath`""
+    Write-Log -msg "Boot data set: $bootData"
+    
+    $oscdimgArgs = @(
+        "-bootdata:$bootData",
+        "-m",               # Ignore maximum size limit
+        "-o",               # Optimize for space
+        "-h",               # Show hidden files
+        "-u2",              # UDF 2.0
+        "-udfver102",       # UDF version 1.02
+        "-l$ISOFileName",   # Set volume label
+        "`"$destinationPath`"",
+        "`"$ISOFile`""
+    )
+    
+    Write-Log -msg "OSCDIMG command: $Oscdimg $($oscdimgArgs -join ' ')"
+    $oscdimgProcess = Start-Process -FilePath "$Oscdimg" -ArgumentList $oscdimgArgs -PassThru -Wait -NoNewWindow
+    
+    if ($oscdimgProcess.ExitCode -eq 0) {
+        Write-Log -msg "ISO successfully created with exit code 0"
+        Write-Host "ISO creation successful" -ForegroundColor Green
+    } else {
+        Write-Log -msg "OSCDIMG exited with code: $($oscdimgProcess.ExitCode)"
+        Write-Host "Warning: ISO creation finished with errors" -ForegroundColor Yellow
+    }
 }
 catch {
     Write-Log -msg "Failed to generate ISO with exit code: $_"
+}
+
+# ISO verification
+if (Test-Path -Path $ISOFile) {
+    try {
+        $verifyMntResult = Mount-DiskImage -ImagePath "$ISOFile" -PassThru
+        $verifyDrive = ($verifyMntResult | Get-Volume).DriveLetter
+        $isoMountPoint = "${verifyDrive}:\"
+        $reqFiles = @("sources\install.wim", "sources\boot.wim", "boot\bcd", "boot\boot.sdi", "bootmgr", "bootmgr.efi", "efi\microsoft\boot\efisys.bin")
+        $missingFiles = $reqFiles | Where-Object { -not (Test-Path (Join-Path $isoMountPoint $_)) }
+
+        Dismount-DiskImage -ImagePath "$ISOFile" 2>&1 | Write-Log
+
+        Start-Sleep -Milliseconds 1000
+        if ($missingFiles) {
+            Write-Log -msg "ISO verification failed - missing files: $($missingFiles -join ', ')"
+            Write-Host "`nError: Created ISO is missing critical files" -ForegroundColor Red
+        }
+        else {
+            Write-Log -msg "ISO verification successful"
+            Write-Host "`nScript Completed. Can find the ISO in `"$scriptDirectory`"" -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Log -msg "Failed to verify ISO: $_"
+        Write-Host "`nUnable to verify ISO integrity" -ForegroundColor Yellow
+    }
+} else {
+    Write-Log -msg "ISO file wasn't created"
+    Write-Host "`nError: ISO file wasn't created" -ForegroundColor Red
 }
 
 # Remove temporary files
@@ -986,25 +1071,6 @@ catch {
 }
 finally {
     Write-Log -msg "Script completed"
-}
-
-# ISO verification
-$verifyMntResult = Mount-DiskImage -ImagePath "$ISOFile" -PassThru
-$verifyDrive = ($verifyMntResult | Get-Volume).DriveLetter
-$isoMountPoint = "${verifyDrive}:\"
-$reqFiles = @("sources\install.wim", "sources\boot.wim", "boot\bcd", "boot\boot.sdi", "bootmgr", "bootmgr.efi", "efi\microsoft\boot\efisys.bin")
-$missingFiles = $reqFiles | Where-Object { -not (Test-Path (Join-Path $isoMountPoint $_)) }
-
-Dismount-DiskImage -ImagePath "$ISOFile" 2>&1 | Write-Log
-
-Start-Sleep -Milliseconds 1000
-if ($missingFiles) {
-    Write-Log -msg "ISO verification failed - missing files: $($missingFiles -join ', ')"
-    Write-Host "`nError: Created ISO is missing critical files" -ForegroundColor Red
-}
-else {
-    Write-Log -msg "ISO verification successful"
-    Write-Host "`nScript Completed. Can find the ISO in `"$scriptDirectory`"" -ForegroundColor Green
 }
 
 Read-Host -Prompt "Press Enter to exit"
