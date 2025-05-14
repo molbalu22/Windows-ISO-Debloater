@@ -185,11 +185,12 @@ if (-not (Test-Path $installWimPath)) {
                 "$($image.ImageIndex). $($image.ImageName)"
             }
             Write-Host
-            $EsdIndex = Read-Host -Prompt "Enter the index to convert and mount"
-            Write-Log -msg "Converting and Mounting image: $EsdIndex"
-            Export-WindowsImage -SourceImagePath $installEsdPath -SourceIndex $EsdIndex -DestinationImagePath $installWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
+            $sourceIndex = Read-Host -Prompt "Enter the index to convert and mount"
+            Write-Log -msg "Converting and Mounting image: $sourceIndex"
+            Export-WindowsImage -SourceImagePath $installEsdPath -SourceIndex $sourceIndex -DestinationImagePath $installWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
             Remove-Item $installEsdPath -Force
             Mount-WindowsImage -ImagePath $installWimPath -Index 1 -Path $installMountDir 2>&1 | Write-Log
+            $sourceIndex = 1  # After conversion, the new WIM will have only one image
         }
         catch {
             Write-Log -msg "Failed to mount image: $_"
@@ -210,10 +211,10 @@ else {
             "$($image.ImageIndex). $($image.ImageName)"
         }
         Write-Host
-        $WimIndex = Read-Host -Prompt "Enter the index to mount"
-        Write-Log -msg "Mounting image: $WimIndex"
+        $sourceIndex = Read-Host -Prompt "Enter the index to mount"
+        Write-Log -msg "Mounting image: $sourceIndex"
         
-        Mount-WindowsImage -ImagePath $installWimPath -Index $WimIndex -Path $installMountDir 2>&1 | Write-Log
+        Mount-WindowsImage -ImagePath $installWimPath -Index $sourceIndex -Path $installMountDir 2>&1 | Write-Log
     }
     catch {
         Write-Log -msg "Failed to mount image: $_"
@@ -592,6 +593,7 @@ reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryM
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-338393Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-353694Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-353696Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-338387Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 
 # Disable Telemetry
 Write-Host "Disabling Telemetry"
@@ -620,6 +622,9 @@ reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v "
 # Disable ad tailoring
 Write-Host "Disabling Ads and Stuffs"
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo" /v "Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+
+# Disable News and Interest
+reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Feeds" /v "EnableFeeds" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 
 # Disable Cortana
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Search" /v "AllowCortana" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
@@ -660,6 +665,7 @@ reg add "HKLM\zNTUSER\Software\Microsoft\GameBar" /v "AutoGameModeEnabled" /t RE
 Write-Host "Tweaking OOBE Settings"
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OOBE" /v "DisablePrivacyExperience" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v "BypassNRO" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v "BypassNROGatherOptions" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 
 # Check if Autounattend.xml exists before copying
 if (Test-Path -Path $autounattendXmlPath) {
@@ -839,7 +845,6 @@ catch {
 }
 
 Write-Log -msg "Exporting image"
-$SourceIndex = if (Test-Path $installWimPath) { $WimIndex } else { 1 }
 Write-Host
 $compressRecovery = Read-Host "Compress install.wim to save disk space? (Y/N)"
 $tempWimPath = "$destinationPath\sources\install_temp.wim"
@@ -847,7 +852,7 @@ $exportSuccess = $false
 
 if ($compressRecovery -eq 'Y' -or $compressRecovery -eq 'y') {
     try {        
-        $process = Start-Process -FilePath "dism.exe" -ArgumentList "/Export-Image /SourceImageFile:`"$destinationPath\sources\install.wim`" /SourceIndex:$SourceIndex /DestinationImageFile:`"$tempWimPath`" /Compress:Recovery /CheckIntegrity" -Wait -NoNewWindow -PassThru
+        $process = Start-Process -FilePath "dism.exe" -ArgumentList "/Export-Image /SourceImageFile:`"$destinationPath\sources\install.wim`" /SourceIndex:$sourceIndex /DestinationImageFile:`"$tempWimPath`" /Compress:Recovery /CheckIntegrity" -Wait -NoNewWindow -PassThru
         if ($process.ExitCode -eq 0 -and (Test-Path $tempWimPath)) {
             $exportSuccess = $true
             Write-Host "`nCompression completed" -ForegroundColor Green
@@ -863,7 +868,7 @@ if ($compressRecovery -eq 'Y' -or $compressRecovery -eq 'y') {
 }
 else {
     try {
-        Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $SourceIndex -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
+        Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $sourceIndex -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
         if (Test-Path $tempWimPath) {
             $exportSuccess = $true
             Write-Host "Export completed successfully" -ForegroundColor Green
