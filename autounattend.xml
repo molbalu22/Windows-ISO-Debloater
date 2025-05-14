@@ -3,11 +3,20 @@
     <settings pass="oobeSystem">
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
             <OOBE>
+                <!-- Show all OOBE screens except internet connectivity -->
                 <SkipUserOOBE>false</SkipUserOOBE>
+                <!-- Set to false during install, but automatically go to local account after install -->
                 <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+                <!-- Set to bypass internet connectivity check after installation -->
                 <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+                <!-- Ensure local account screen is shown -->
                 <HideLocalAccountScreen>false</HideLocalAccountScreen>
-                <ProtectYourPC>3</ProtectYourPC>
+                <!-- Show EULA page -->
+                <HideEULAPage>false</HideEULAPage>
+                <!-- Skip "I don't have internet" page -->
+                <NetworkLocation>Home</NetworkLocation>
+                <!-- Skip Microsoft account setup -->
+                <SkipMachineOOBE>false</SkipMachineOOBE>
             </OOBE>
         </component>
     </settings>
@@ -18,14 +27,17 @@
             </DynamicUpdate>
             <UserData>
                 <ProductKey>
-                    <Key/>
+                    <Key></Key>
+                    <WillShowUI>Always</WillShowUI>
                 </ProductKey>
+                <AcceptEula>false</AcceptEula>
             </UserData>
+            <EnableNetwork>false</EnableNetwork>
+            <EnableFirewall>true</EnableFirewall>
         </component>
     </settings>
 
-    <!-- Removing Gamebar Popup post install -->
-    <!-- Somehow, implementing it directly on the image was causing corruption -->
+    <!-- Gamebar fixes -->
     <settings pass="specialize">
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
             <RegisteredOwner></RegisteredOwner>
