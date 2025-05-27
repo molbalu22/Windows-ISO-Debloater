@@ -6,6 +6,8 @@
 # Administrator Privileges
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Start-Process -FilePath PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"" -Verb RunAs
+    Write-Host "This script requires administrator privileges. Please run it as administrator." -ForegroundColor Red
+    Read-Host -Prompt "Press Enter to exit"
     Exit
 }
 Clear-Host
@@ -145,12 +147,14 @@ if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     else {
         Write-Host "Failed to mount the ISO file." -ForegroundColor Red
         Write-Log -msg "Failed to mount the ISO file."
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     }
 }
 else {
     Write-Host "No file selected. Exiting Script" -ForegroundColor Red
     Write-Log -msg "No file selected"
+    Read-Host -Prompt "Press Enter to exit"
     Exit
 }
 
@@ -193,12 +197,16 @@ if (-not (Test-Path $installWimPath)) {
             $sourceIndex = 1  # After conversion, the new WIM will have only one image
         }
         catch {
+            Write-Host "Failed to convert or mount the ESD image: $_" -ForegroundColor Red
             Write-Log -msg "Failed to mount image: $_"
+            Read-Host -Prompt "Press Enter to exit"
             Exit
         }
     }
     else {
         Write-Host "Neither install.wim nor install.esd found. Make sure to mount the correct ISO" -ForegroundColor Red
+        Write-Log -msg "Neither install.wim nor install.esd found"
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     }
 }
@@ -217,7 +225,9 @@ else {
         Mount-WindowsImage -ImagePath $installWimPath -Index $sourceIndex -Path $installMountDir 2>&1 | Write-Log
     }
     catch {
+        Write-Host "Failed to mount the image: $_" -ForegroundColor Red
         Write-Log -msg "Failed to mount image: $_"
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     }
 }
@@ -226,6 +236,7 @@ if (-not (Test-Path "$installMountDir\Windows")) {
     Write-Host "Error while mounting image. Try again." -ForegroundColor Red
     Write-Log -msg "Mounted image not found. Exiting"
     Remove-TempFiles
+    Read-Host -Prompt "Press Enter to exit"
     Exit 
 }
 
@@ -304,8 +315,8 @@ $windowsPackagesToRemove = @(
 )
 
 # Remove Packages
-Write-Log -msg "Removing provisioned packages"
 Write-Host "`nRemoving provisioned Packages..." -ForegroundColor Cyan
+Write-Log -msg "Removing provisioned packages"
 Start-Sleep -Milliseconds 1500
 
 # Remove AppX Packages
@@ -328,8 +339,8 @@ foreach ($appxPattern in $appxPatternsToRemove) {
     }
 }
 
-Write-Log -msg "Removing unnecessary Windows capabilities"
 Write-Host "`nRemoving Unnecessary Windows Capabilities..." -ForegroundColor Cyan
+Write-Log -msg "Removing unnecessary Windows capabilities"
 Start-Sleep -Milliseconds 1500
 
 # Remove Windows Capabilities
@@ -373,15 +384,15 @@ foreach ($windowsPackagePattern in $windowsPackagesToRemove) {
 }
 
 # # Remove Recall (Have conflict with Explorer)
-# Write-Log -msg "Removing Recall"
 # Write-Host "`nRemoving Recall..."
+# Write-Log -msg "Removing Recall"
 # Start-Sleep -Milliseconds 1500
 # dism /image:$installMountDir /Disable-Feature /FeatureName:'Recall' /Remove 2>&1 | Write-Log
 # Write-Host "Done"
 
 # Remove OutlookPWA
-Write-Log -msg "Removing OutlookPWA"
 Write-Host "`nRemoving Outlook..." -ForegroundColor Cyan
+Write-Log -msg "Removing OutlookPWA"
 Start-Sleep -Milliseconds 1500
 # Get-ChildItem "$installMountDir\Windows\WinSxS\amd64_microsoft-windows-outlookpwa*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } 2>&1 | Write-Log
 Write-Host "Done" -ForegroundColor Green
@@ -424,8 +435,8 @@ do {
     $EdgeConfirm = $EdgeConfirm.ToUpper()
 
     if ($EdgeConfirm -eq 'Y') {
-        Write-Log -msg "Removing EDGE"
         Write-Host "Removing EDGE..." -ForegroundColor Cyan
+        Write-Log -msg "Removing EDGE"
     
         # Edge Patterns
         $EDGEpatterns = @(
@@ -834,13 +845,12 @@ try {
     Write-Log -msg "Image unmounted successfully"
 }
 catch {
-    Write-Log -msg "Failed to unmount image: $_"
     Write-Host "`nFailed to Unmount the Image. Check Logs for more info." -ForegroundColor Red
     Write-Host "Close all the Folders opened in the mountdir to complete the Script."
     Write-Host "Run the following code in Powershell(as admin) to unmount the broken image: "
     Write-Host "Dismount-WindowsImage -Path $installMountDir -Discard" -ForegroundColor Yellow
+    Write-Log -msg "Failed to unmount image: $_"
     Read-Host -Prompt "Press Enter to exit"
-    Write-Log -msg "Exiting Script"
     Exit
 }
 
@@ -888,15 +898,17 @@ if ($exportSuccess) {
     Move-Item -Path $tempWimPath -Destination "$destinationPath\sources\install.wim" -Force
    
     if (-not (Test-Path "$destinationPath\sources\install.wim")) {
-        Write-Host "Error: Final install.wim is missing" -ForegroundColor Red
+        Write-Host "Error: Unable to create the WIM file. Check logs for details." -ForegroundColor Red
         Write-Log -msg "Final install.wim missing"
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     } else {
         Write-Log -msg "WIM file successfully replaced"
     }
 } else {
-    Write-Host "Error: WIM export failed, original WIM file preserved" -ForegroundColor Yellow
+    Write-Host "Error: Unable to export modified WIM file. Check logs for details." -ForegroundColor Yellow
     Write-Log -msg "WIM export failed, original WIM file preserved"
+    Read-Host -Prompt "Press Enter to exit"
     Exit
 }
 
@@ -946,8 +958,11 @@ if (-not (Test-Path -Path $Oscdimg)) {
                 Start-Sleep -Seconds $retryDelaySeconds
             }
         }
-        Write-Host "`nInternet connection not available after $maxAttempts attempts. Exiting the script." -ForegroundColor Red
+        Write-Host "`nInternet connection not available after $maxAttempts attempts." -ForegroundColor Red
+        Write-Host "A working internet connection is required to download oscdimg.exe."
+        Write-Host "Please check your connection and try again."
         Remove-TempFiles
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     }
     
@@ -990,9 +1005,10 @@ if (-not (Test-Path -Path $Oscdimg)) {
         }
     }
     else {
-        Write-Host "Failed to download Oscdimg.exe" -ForegroundColor Red
+        Write-Host "Error: Failed to download Oscdimg.exe" -ForegroundColor Red
         Write-Log -msg "Failed to resolve ADK download link. HTTP Status: $($RedirectResponse.StatusCode)"
         Remove-TempFiles
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     }
 }
@@ -1024,11 +1040,11 @@ try {
     $oscdimgProcess = Start-Process -FilePath "$Oscdimg" -ArgumentList $oscdimgArgs -PassThru -Wait -NoNewWindow
     
     if ($oscdimgProcess.ExitCode -eq 0) {
-        Write-Log -msg "ISO successfully created with exit code 0"
         Write-Host "ISO creation successful" -ForegroundColor Green
+        Write-Log -msg "ISO successfully created with exit code 0"
     } else {
-        Write-Log -msg "OSCDIMG exited with code: $($oscdimgProcess.ExitCode)"
         Write-Host "Warning: ISO creation finished with errors" -ForegroundColor Yellow
+        Write-Log -msg "OSCDIMG exited with code: $($oscdimgProcess.ExitCode)"
     }
 }
 catch {
@@ -1048,21 +1064,21 @@ if (Test-Path -Path $ISOFile) {
 
         Start-Sleep -Milliseconds 1000
         if ($missingFiles) {
-            Write-Log -msg "ISO verification failed - missing files: $($missingFiles -join ', ')"
             Write-Host "`nError: Created ISO is missing critical files" -ForegroundColor Red
+            Write-Log -msg "ISO verification failed - missing files: $($missingFiles -join ', ')"
         }
         else {
-            Write-Log -msg "ISO verification successful"
             Write-Host "`nScript Completed. Can find the ISO in `"$scriptDirectory`"" -ForegroundColor Green
+            Write-Log -msg "ISO verification successful"
         }
     }
     catch {
-        Write-Log -msg "Failed to verify ISO: $_"
         Write-Host "`nUnable to verify ISO integrity" -ForegroundColor Yellow
+        Write-Log -msg "Failed to verify ISO: $_"
     }
 } else {
-    Write-Log -msg "ISO file wasn't created"
     Write-Host "`nError: ISO file wasn't created" -ForegroundColor Red
+    Write-Log -msg "ISO file wasn't created"
 }
 
 # Remove temporary files
