@@ -6,6 +6,8 @@
 # Administrator Privileges
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Start-Process -FilePath PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"" -Verb RunAs
+    Write-Host "This script requires administrator privileges. Please run it as administrator." -ForegroundColor Red
+    Read-Host -Prompt "Press Enter to exit"
     Exit
 }
 Clear-Host
@@ -40,30 +42,37 @@ $logFilePath = Join-Path -Path $scriptDirectory -ChildPath 'script_log.txt'
 # Log File
 function Write-Log {
     [CmdletBinding()]
-    param (
-        [Parameter(ValueFromPipeline=$true)]
-        [object]$InputObj,
-        
-        [Parameter()]
-        [string]$msg
-    )
+    param ( [Parameter(ValueFromPipeline=$true)] [object]$InputObj, [Parameter()] [string]$msg, [Parameter()] [switch]$Raw, [Parameter()] [string]$Sep = " || " )
     process {
-        if ($msg) {
-            $logEntry = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $msg"
-            Add-Content -Path "$logFilePath" -Value $logEntry
-            return
+        $content = if ($msg) { $msg } elseif ($null -ne $InputObj) { if ($InputObj -is [string]) { $InputObj } else { $InputObj | Out-String } } else { return }
+        if (-not $Raw -and $content.Trim()) {
+            $lines = @($content -split '\n' | Where-Object { $_.Trim() })   
+            if ($lines.Count -gt 1) {
+                $processedLines = @()  
+                foreach ($line in $lines) {
+                    $trimmed = $line.Trim()
+                    if ($trimmed -match '^At\s+(.+)') { 
+                        $processedLines += "At $($matches[1])"
+                    }
+                    elseif ($trimmed -match '^\s*\+\s*(.+)') { 
+                        $processedLines += ("+ " + ($matches[1] -replace '\s{2,}', ' '))
+                    }
+                    elseif ($trimmed -match '^\s*\+?\s*(\w+\w+)\s*:\s*(.+)') { 
+                        $processedLines += "$($matches[1]): $($matches[2])"
+                    }
+                    elseif ($trimmed -notmatch '^-{4,}' -and $trimmed) {
+                        $processedLines += ($trimmed -replace '\s{2,}', ' ')
+                    }
+                }
+                $content = $processedLines -join $Sep
+            }
+            else {
+                $content = ($content.Trim() -replace '\s{2,}', ' ')
+            }
         }
-        if ($null -ne $InputObj) {
-            $stringOutput = if ($InputObj -is [string]) {
-                $InputObj
-            } else {
-                $InputObj | Out-String
-            }
-            $stringOutput = $stringOutput.Trim()
-            if ($stringOutput -ne '') {
-                $logEntry = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $stringOutput"
-                Add-Content -Path "$logFilePath" -Value $logEntry
-            }
+        
+        if ($content -and $content.Trim()) {
+            Add-Content -Path "$logFilePath" -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $($content.Trim())"
         }
     }
 }
@@ -77,28 +86,65 @@ function Remove-TempFiles {
 
 # Force Remove Function
 function Set-OwnAndRemove {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
+    param([Parameter(Mandatory)][string]$Path)
+    
     try {
         $FullPath = Resolve-Path -Path $Path -ErrorAction Stop
+        if (-not (Test-Path -Path $FullPath)) { return $true }
+
+        # ACL method
+        try {
+            $IsFolder = (Get-Item $FullPath).PSIsContainer
+            $Acl = Get-Acl $FullPath
+            $Acl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
+            $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+            
+            if ($IsFolder) {
+                $AccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+            } else {
+                $AccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")
+            }
+            
+            $Acl.SetAccessRule($AccessRule)
+            Set-Acl -Path $FullPath -AclObject $Acl
+            
+            # Apply to child items if folder
+            if ($IsFolder) {
+                Get-ChildItem -Path $FullPath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                    try {
+                        $ChildAcl = Get-Acl $_.FullName
+                        $ChildAcl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
+                        $ChildAcl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")))
+                        Set-Acl -Path $_.FullName -AclObject $ChildAcl
+                    } catch {}
+                }
+            }
+            
+            Remove-Item -Path $FullPath -Force -Recurse -ErrorAction Stop
+            "Removed with ACL: $FullPath" | Write-Log
+            return $true
+        } catch {}
+        
+        # icacls fallback
+        try {
+            if($IsFolder) { takeown /F "$FullPath" /R /D Y 2>&1 | Write-Log } else { takeown /F "$FullPath" /A 2>&1 | Write-Log }
+            
+            foreach ($Perm in @("*S-1-5-32-544:F", "Administrators:F", "$CurrentUser`:F")) {
+                if($IsFolder) { icacls "$FullPath" /grant:R "$Perm" /T /C 2>&1 | Write-Log } else { icacls "$FullPath" /grant:R "$Perm" 2>&1 | Write-Log }
+                if ($LASTEXITCODE -eq 0) { break }
+            }
+            
+            Remove-Item -Path $FullPath -Force -Recurse -ErrorAction Stop
+            "Removed with icacls: $FullPath" | Write-Log
+            return $true
+        } catch {}
+        
+        "Failed to remove: $FullPath" | Write-Log
+        return $false
     }
     catch {
-        return
-    }
-
-    if (Test-Path -Path $FullPath) {
-        if ((Get-Item $FullPath).PSIsContainer) {
-            takeown /F "$FullPath" /R /D Y 2>&1 | Write-Log
-            icacls "$FullPath" /grant:R Administrators:F /T /C 2>&1 | Write-Log
-        }
-        else {
-            takeown /F "$FullPath" /A 2>&1 | Write-Log
-            icacls "$FullPath" /grant:R Administrators:F 2>&1 | Write-Log
-        }
-        Remove-Item -Path "$FullPath" -Recurse -Force 2>&1 | Write-Log
+        "Error: $Path - $($_.Exception.Message)" | Write-Log
+        return $false
     }
 }
 
@@ -142,12 +188,14 @@ if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     else {
         Write-Host "Failed to mount the ISO file." -ForegroundColor Red
         Write-Log -msg "Failed to mount the ISO file."
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     }
 }
 else {
     Write-Host "No file selected. Exiting Script" -ForegroundColor Red
     Write-Log -msg "No file selected"
+    Read-Host -Prompt "Press Enter to exit"
     Exit
 }
 
@@ -182,19 +230,24 @@ if (-not (Test-Path $installWimPath)) {
                 "$($image.ImageIndex). $($image.ImageName)"
             }
             Write-Host
-            $EsdIndex = Read-Host -Prompt "Enter the index to convert and mount"
-            Write-Log -msg "Converting and Mounting image: $EsdIndex"
-            Export-WindowsImage -SourceImagePath $installEsdPath -SourceIndex $EsdIndex -DestinationImagePath $installWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
+            $sourceIndex = Read-Host -Prompt "Enter the index to convert and mount"
+            Write-Log -msg "Converting and Mounting image: $sourceIndex"
+            Export-WindowsImage -SourceImagePath $installEsdPath -SourceIndex $sourceIndex -DestinationImagePath $installWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
             Remove-Item $installEsdPath -Force
             Mount-WindowsImage -ImagePath $installWimPath -Index 1 -Path $installMountDir 2>&1 | Write-Log
+            $sourceIndex = 1  # After conversion, the new WIM will have only one image
         }
         catch {
+            Write-Host "Failed to convert or mount the ESD image: $_" -ForegroundColor Red
             Write-Log -msg "Failed to mount image: $_"
+            Read-Host -Prompt "Press Enter to exit"
             Exit
         }
     }
     else {
         Write-Host "Neither install.wim nor install.esd found. Make sure to mount the correct ISO" -ForegroundColor Red
+        Write-Log -msg "Neither install.wim nor install.esd found"
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     }
 }
@@ -207,13 +260,15 @@ else {
             "$($image.ImageIndex). $($image.ImageName)"
         }
         Write-Host
-        $WimIndex = Read-Host -Prompt "Enter the index to mount"
-        Write-Log -msg "Mounting image: $WimIndex"
+        $sourceIndex = Read-Host -Prompt "Enter the index to mount"
+        Write-Log -msg "Mounting image: $sourceIndex"
         
-        Mount-WindowsImage -ImagePath $installWimPath -Index $WimIndex -Path $installMountDir 2>&1 | Write-Log
+        Mount-WindowsImage -ImagePath $installWimPath -Index $sourceIndex -Path $installMountDir 2>&1 | Write-Log
     }
     catch {
+        Write-Host "Failed to mount the image: $_" -ForegroundColor Red
         Write-Log -msg "Failed to mount image: $_"
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     }
 }
@@ -222,6 +277,7 @@ if (-not (Test-Path "$installMountDir\Windows")) {
     Write-Host "Error while mounting image. Try again." -ForegroundColor Red
     Write-Log -msg "Mounted image not found. Exiting"
     Remove-TempFiles
+    Read-Host -Prompt "Press Enter to exit"
     Exit 
 }
 
@@ -300,8 +356,8 @@ $windowsPackagesToRemove = @(
 )
 
 # Remove Packages
-Write-Log -msg "Removing provisioned packages"
 Write-Host "`nRemoving provisioned Packages..." -ForegroundColor Cyan
+Write-Log -msg "Removing provisioned packages"
 Start-Sleep -Milliseconds 1500
 
 # Remove AppX Packages
@@ -324,8 +380,8 @@ foreach ($appxPattern in $appxPatternsToRemove) {
     }
 }
 
-Write-Log -msg "Removing unnecessary Windows capabilities"
 Write-Host "`nRemoving Unnecessary Windows Capabilities..." -ForegroundColor Cyan
+Write-Log -msg "Removing unnecessary Windows capabilities"
 Start-Sleep -Milliseconds 1500
 
 # Remove Windows Capabilities
@@ -369,15 +425,15 @@ foreach ($windowsPackagePattern in $windowsPackagesToRemove) {
 }
 
 # # Remove Recall (Have conflict with Explorer)
-# Write-Log -msg "Removing Recall"
 # Write-Host "`nRemoving Recall..."
+# Write-Log -msg "Removing Recall"
 # Start-Sleep -Milliseconds 1500
 # dism /image:$installMountDir /Disable-Feature /FeatureName:'Recall' /Remove 2>&1 | Write-Log
 # Write-Host "Done"
 
 # Remove OutlookPWA
-Write-Log -msg "Removing OutlookPWA"
 Write-Host "`nRemoving Outlook..." -ForegroundColor Cyan
+Write-Log -msg "Removing OutlookPWA"
 Start-Sleep -Milliseconds 1500
 # Get-ChildItem "$installMountDir\Windows\WinSxS\amd64_microsoft-windows-outlookpwa*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } 2>&1 | Write-Log
 Write-Host "Done" -ForegroundColor Green
@@ -420,8 +476,8 @@ do {
     $EdgeConfirm = $EdgeConfirm.ToUpper()
 
     if ($EdgeConfirm -eq 'Y') {
-        Write-Log -msg "Removing EDGE"
         Write-Host "Removing EDGE..." -ForegroundColor Cyan
+        Write-Log -msg "Removing EDGE"
     
         # Edge Patterns
         $EDGEpatterns = @(
@@ -589,6 +645,7 @@ reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryM
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-338393Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-353694Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-353696Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-338387Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 
 # Disable Telemetry
 Write-Host "Disabling Telemetry"
@@ -617,6 +674,9 @@ reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v "
 # Disable ad tailoring
 Write-Host "Disabling Ads and Stuffs"
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo" /v "Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+
+# Disable News and Interest
+reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Feeds" /v "EnableFeeds" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 
 # Disable Cortana
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Search" /v "AllowCortana" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
@@ -657,6 +717,7 @@ reg add "HKLM\zNTUSER\Software\Microsoft\GameBar" /v "AutoGameModeEnabled" /t RE
 Write-Host "Tweaking OOBE Settings"
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OOBE" /v "DisablePrivacyExperience" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v "BypassNRO" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v "BypassNROGatherOptions" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 
 # Check if Autounattend.xml exists before copying
 if (Test-Path -Path $autounattendXmlPath) {
@@ -825,18 +886,16 @@ try {
     Write-Log -msg "Image unmounted successfully"
 }
 catch {
-    Write-Log -msg "Failed to unmount image: $_"
     Write-Host "`nFailed to Unmount the Image. Check Logs for more info." -ForegroundColor Red
     Write-Host "Close all the Folders opened in the mountdir to complete the Script."
     Write-Host "Run the following code in Powershell(as admin) to unmount the broken image: "
     Write-Host "Dismount-WindowsImage -Path $installMountDir -Discard" -ForegroundColor Yellow
+    Write-Log -msg "Failed to unmount image: $_"
     Read-Host -Prompt "Press Enter to exit"
-    Write-Log -msg "Exiting Script"
     Exit
 }
 
 Write-Log -msg "Exporting image"
-$SourceIndex = if (Test-Path $installWimPath) { $WimIndex } else { 1 }
 Write-Host
 $compressRecovery = Read-Host "Compress install.wim to save disk space? (Y/N)"
 $tempWimPath = "$destinationPath\sources\install_temp.wim"
@@ -844,7 +903,7 @@ $exportSuccess = $false
 
 if ($compressRecovery -eq 'Y' -or $compressRecovery -eq 'y') {
     try {        
-        $process = Start-Process -FilePath "dism.exe" -ArgumentList "/Export-Image /SourceImageFile:`"$destinationPath\sources\install.wim`" /SourceIndex:$SourceIndex /DestinationImageFile:`"$tempWimPath`" /Compress:Recovery /CheckIntegrity" -Wait -NoNewWindow -PassThru
+        $process = Start-Process -FilePath "dism.exe" -ArgumentList "/Export-Image /SourceImageFile:`"$destinationPath\sources\install.wim`" /SourceIndex:$sourceIndex /DestinationImageFile:`"$tempWimPath`" /Compress:Recovery /CheckIntegrity" -Wait -NoNewWindow -PassThru
         if ($process.ExitCode -eq 0 -and (Test-Path $tempWimPath)) {
             $exportSuccess = $true
             Write-Host "`nCompression completed" -ForegroundColor Green
@@ -860,7 +919,7 @@ if ($compressRecovery -eq 'Y' -or $compressRecovery -eq 'y') {
 }
 else {
     try {
-        Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $SourceIndex -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
+        Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $sourceIndex -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
         if (Test-Path $tempWimPath) {
             $exportSuccess = $true
             Write-Host "Export completed successfully" -ForegroundColor Green
@@ -880,15 +939,17 @@ if ($exportSuccess) {
     Move-Item -Path $tempWimPath -Destination "$destinationPath\sources\install.wim" -Force
    
     if (-not (Test-Path "$destinationPath\sources\install.wim")) {
-        Write-Host "Error: Final install.wim is missing" -ForegroundColor Red
+        Write-Host "Error: Unable to create the WIM file. Check logs for details." -ForegroundColor Red
         Write-Log -msg "Final install.wim missing"
+        Read-Host -Prompt "Press Enter to exit"
         Exit
     } else {
         Write-Log -msg "WIM file successfully replaced"
     }
 } else {
-    Write-Host "Error: WIM export failed, original WIM file preserved" -ForegroundColor Yellow
+    Write-Host "Error: Unable to export modified WIM file. Check logs for details." -ForegroundColor Yellow
     Write-Log -msg "WIM export failed, original WIM file preserved"
+    Read-Host -Prompt "Press Enter to exit"
     Exit
 }
 
@@ -1008,21 +1069,21 @@ if (Test-Path -Path $ISOFile) {
 
         Start-Sleep -Milliseconds 1000
         if ($missingFiles) {
-            Write-Log -msg "ISO verification failed - missing files: $($missingFiles -join ', ')"
             Write-Host "`nError: Created ISO is missing critical files" -ForegroundColor Red
+            Write-Log -msg "ISO verification failed - missing files: $($missingFiles -join ', ')"
         }
         else {
-            Write-Log -msg "ISO verification successful"
             Write-Host "`nScript Completed. Can find the ISO in `"$scriptDirectory`"" -ForegroundColor Green
+            Write-Log -msg "ISO verification successful"
         }
     }
     catch {
-        Write-Log -msg "Failed to verify ISO: $_"
         Write-Host "`nUnable to verify ISO integrity" -ForegroundColor Yellow
+        Write-Log -msg "Failed to verify ISO: $_"
     }
 } else {
-    Write-Log -msg "ISO file wasn't created"
     Write-Host "`nError: ISO file wasn't created" -ForegroundColor Red
+    Write-Log -msg "ISO file wasn't created"
 }
 
 # Remove temporary files
