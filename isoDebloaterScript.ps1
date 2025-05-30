@@ -79,28 +79,65 @@ function Remove-TempFiles {
 
 # Force Remove Function
 function Set-OwnAndRemove {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
+    param([Parameter(Mandatory)][string]$Path)
+    
     try {
         $FullPath = Resolve-Path -Path $Path -ErrorAction Stop
+        if (-not (Test-Path -Path $FullPath)) { return $true }
+
+        # ACL method
+        try {
+            $IsFolder = (Get-Item $FullPath).PSIsContainer
+            $Acl = Get-Acl $FullPath
+            $Acl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
+            $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+            
+            if ($IsFolder) {
+                $AccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+            } else {
+                $AccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")
+            }
+            
+            $Acl.SetAccessRule($AccessRule)
+            Set-Acl -Path $FullPath -AclObject $Acl
+            
+            # Apply to child items if folder
+            if ($IsFolder) {
+                Get-ChildItem -Path $FullPath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                    try {
+                        $ChildAcl = Get-Acl $_.FullName
+                        $ChildAcl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
+                        $ChildAcl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")))
+                        Set-Acl -Path $_.FullName -AclObject $ChildAcl
+                    } catch {}
+                }
+            }
+            
+            Remove-Item -Path $FullPath -Force -Recurse -ErrorAction Stop
+            "Removed with ACL: $FullPath" | Write-Log
+            return $true
+        } catch {}
+        
+        # icacls fallback
+        try {
+            if($IsFolder) { takeown /F "$FullPath" /R /D Y 2>&1 | Write-Log } else { takeown /F "$FullPath" /A 2>&1 | Write-Log }
+            
+            foreach ($Perm in @("*S-1-5-32-544:F", "Administrators:F", "$CurrentUser`:F")) {
+                if($IsFolder) { icacls "$FullPath" /grant:R "$Perm" /T /C 2>&1 | Write-Log } else { icacls "$FullPath" /grant:R "$Perm" 2>&1 | Write-Log }
+                if ($LASTEXITCODE -eq 0) { break }
+            }
+            
+            Remove-Item -Path $FullPath -Force -Recurse -ErrorAction Stop
+            "Removed with icacls: $FullPath" | Write-Log
+            return $true
+        } catch {}
+        
+        "Failed to remove: $FullPath" | Write-Log
+        return $false
     }
     catch {
-        return
-    }
-
-    if (Test-Path -Path $FullPath) {
-        if ((Get-Item $FullPath).PSIsContainer) {
-            takeown /F "$FullPath" /R /D Y 2>&1 | Write-Log
-            icacls "$FullPath" /grant:R Administrators:F /T /C 2>&1 | Write-Log
-        }
-        else {
-            takeown /F "$FullPath" /A 2>&1 | Write-Log
-            icacls "$FullPath" /grant:R Administrators:F 2>&1 | Write-Log
-        }
-        Remove-Item -Path "$FullPath" -Recurse -Force 2>&1 | Write-Log
+        "Error: $Path - $($_.Exception.Message)" | Write-Log
+        return $false
     }
 }
 
