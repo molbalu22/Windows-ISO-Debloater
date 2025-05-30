@@ -42,30 +42,37 @@ $logFilePath = Join-Path -Path $scriptDirectory -ChildPath 'script_log.txt'
 # Log File
 function Write-Log {
     [CmdletBinding()]
-    param (
-        [Parameter(ValueFromPipeline=$true)]
-        [object]$InputObj,
-        
-        [Parameter()]
-        [string]$msg
-    )
+    param ( [Parameter(ValueFromPipeline=$true)] [object]$InputObj, [Parameter()] [string]$msg, [Parameter()] [switch]$Raw, [Parameter()] [string]$Sep = " || " )
     process {
-        if ($msg) {
-            $logEntry = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $msg"
-            Add-Content -Path "$logFilePath" -Value $logEntry
-            return
+        $content = if ($msg) { $msg } elseif ($null -ne $InputObj) { if ($InputObj -is [string]) { $InputObj } else { $InputObj | Out-String } } else { return }
+        if (-not $Raw -and $content.Trim()) {
+            $lines = @($content -split '\n' | Where-Object { $_.Trim() })   
+            if ($lines.Count -gt 1) {
+                $processedLines = @()  
+                foreach ($line in $lines) {
+                    $trimmed = $line.Trim()
+                    if ($trimmed -match '^At\s+(.+)') { 
+                        $processedLines += "At $($matches[1])"
+                    }
+                    elseif ($trimmed -match '^\s*\+\s*(.+)') { 
+                        $processedLines += ("+ " + ($matches[1] -replace '\s{2,}', ' '))
+                    }
+                    elseif ($trimmed -match '^\s*\+?\s*(\w+\w+)\s*:\s*(.+)') { 
+                        $processedLines += "$($matches[1]): $($matches[2])"
+                    }
+                    elseif ($trimmed -notmatch '^-{4,}' -and $trimmed) {
+                        $processedLines += ($trimmed -replace '\s{2,}', ' ')
+                    }
+                }
+                $content = $processedLines -join $Sep
+            }
+            else {
+                $content = ($content.Trim() -replace '\s{2,}', ' ')
+            }
         }
-        if ($null -ne $InputObj) {
-            $stringOutput = if ($InputObj -is [string]) {
-                $InputObj
-            } else {
-                $InputObj | Out-String
-            }
-            $stringOutput = $stringOutput.Trim()
-            if ($stringOutput -ne '') {
-                $logEntry = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $stringOutput"
-                Add-Content -Path "$logFilePath" -Value $logEntry
-            }
+        
+        if ($content -and $content.Trim()) {
+            Add-Content -Path "$logFilePath" -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $($content.Trim())"
         }
     }
 }
