@@ -1,0 +1,43 @@
+name: Add release assets
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  add-script-to-release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Prepare release assets
+        run: |
+          cp download.ps1 isoDebloater.ps1
+          
+          echo '@(set "0=%~f0"^)#) & powershell -nop -c iex([io.file]::ReadAllText($env:0)) & exit /b' > isoDebloater.bat
+          cat download.ps1 >> isoDebloater.bat
+          
+      - name: Upload PowerShell script
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./isoDebloater.ps1
+          asset_name: isoDebloater.ps1
+          asset_content_type: text/plain
+          
+      - name: Upload batch script
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./isoDebloater.bat
+          asset_name: isoDebloater.bat
+          asset_content_type: text/plain
