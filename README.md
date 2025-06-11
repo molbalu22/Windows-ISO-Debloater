@@ -2,8 +2,7 @@
 
 ![Stars](https://img.shields.io/github/stars/itsNileshHere/Windows-ISO-Debloater?style=for-the-badge)
 [![Version](https://img.shields.io/github/v/release/itsNileshHere/Windows-ISO-Debloater?color=%230567ff&label=Latest%20Release&style=for-the-badge)](https://github.com/itsNileshHere/Windows-ISO-Debloater/releases/latest)
-
-</div>
+[![Total Downloads](https://img.shields.io/github/downloads/itsNileshHere/Windows-ISO-Debloater/total?label=Total%20Downloads&style=for-the-badge)](https://github.com/itsNileshHere/Windows-ISO-Debloater/releases/latest)
 
 ## 📋 Overview
 
@@ -32,14 +31,12 @@ The script has been thoroughly tested with:
 Launch PowerShell as **Administrator** and execute:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Unrestricted -Force
-iwr -useb https://itsnileshhere.github.io/Windows-ISO-Debloater/download.ps1 | iex
+irm https://itsnileshhere.github.io/Windows-ISO-Debloater/download.ps1 | iex
 ```
 
 ### Option 2: Manual Download and Execution
 
 1. Download the latest release from [here](https://github.com/itsNileshHere/Windows-ISO-Debloater/releases/latest)
-2. Extract the downloaded package
 3. Right-click on the script and select "Run with PowerShell" (as Administrator)
 
 ## 📝 Step-by-Step Usage Guide
@@ -72,17 +69,14 @@ The script includes numerous registry optimizations to:
 
 ### ISO Generation Tool
 
-The script uses `oscdimg.exe` to generate the new ISO file. This tool is:
-
-1. **Automatically downloaded** from Microsoft's servers during script execution
-2. **Used to create** a bootable ISO with the modified Windows installation files
+The script utilizes `oscdimg.exe`, a Microsoft tool for creating bootable ISO images. During execution, the script automatically downloads `oscdimg.exe` directly from Microsoft's servers and uses it to generate the modified ISO.
 
 For those who prefer to use their own copy of oscdimg.exe:
 
 1. Download the "Windows ADK" from [Microsoft's official site](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install)
 2. During installation, select only the "Deployment Tools" component
 3. Navigate to: `C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg`
-4. Copy `oscdimg.exe` alongside the script
+4. Check if `oscdimg.exe` is installed properly
 
 ### IMAPI2FS ISO Generation Method (Experimental)
 
@@ -108,11 +102,15 @@ The script can remove various components based on preferences, including:
 - **System Components**: Windows Media Player, Windows Fax and Scan, etc.
 - **Features**: Telemetry services, unnecessary language packs, etc.
 
+## ⭐ Support
+
+If you find this project helpful, consider giving it a ⭐ on GitHub!
+
 ## 🌟 Credits
 
 - [tiny11builder](https://github.com/ntdevlabs/tiny11builder) for inspiration and approach
 - [Winaero](https://winaero.com/) for registry optimization techniques
-- Microsoft for providing oscdimg.exe and Windows ADK tools
+- Microsoft for Windows ADK tools
 
 ## ⚠️ Disclaimer
 
