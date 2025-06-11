@@ -6,7 +6,7 @@
 # Administrator Privileges
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Start-Process -FilePath PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"" -Verb RunAs
-    Write-Host "This script requires administrator privileges. Please run it as administrator." -ForegroundColor Red
+    Write-Host "This script requires administrator privileges. Run it as administrator." -ForegroundColor Red
     Read-Host -Prompt "Press Enter to exit"
     Exit
 }
@@ -593,7 +593,7 @@ do {
         break
     }
     else {
-        Write-Host "Invalid input. Please enter 'Y' or 'N'." -ForegroundColor Yellow
+        Write-Host "Invalid input. Enter 'Y' or 'N'." -ForegroundColor Yellow
     }
 } while ($true)
 
@@ -854,7 +854,7 @@ do {
         break
     }
     else {
-        Write-Host "Invalid input. Please enter 'Y' or 'N'." -ForegroundColor Yellow
+        Write-Host "Invalid input. Enter 'Y' or 'N'." -ForegroundColor Yellow
     }
 } while ($true)
 
@@ -892,7 +892,7 @@ if ($buildNumber -ge 22000) {
             break
         }
         else {
-            Write-Host "Invalid input. Please enter 'Y' or 'N'." -ForegroundColor Yellow
+            Write-Host "Invalid input. Enter 'Y' or 'N'." -ForegroundColor Yellow
         }
     } while ($true)
 }
@@ -1014,30 +1014,44 @@ $ISOFile = Join-Path -Path $scriptDirectory -ChildPath "$ISOFileName.iso"
 if (-not (Test-Path -Path $Oscdimg)) {
     Write-Log -msg "Oscdimg.exe not found at '$Oscdimg'"
     Write-Host "`nOscdimg.exe not found at '$Oscdimg'." -ForegroundColor Red
-    Start-Sleep -Milliseconds 1800
+    Start-Sleep -Milliseconds 1400
     Write-Host "`nTrying to Download oscdimg.exe..." -ForegroundColor Cyan
 
     # Function to check internet connection
     function Test-InternetConnection {
         param (
             [int]$maxAttempts = 3,
-            [int]$retryDelaySeconds = 5
+            [int]$retryDelay = 5,
+            [string]$hostname = "1.1.1.1", # Cloudflare DNS
+            [int]$port = 53,
+            [int]$timeout = 5000
         )
         for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            if (Test-Connection -ComputerName google.com -Count 1 -ErrorAction SilentlyContinue) {
-                return $true
-            }
-            else {
-                Write-Host "Internet connection not available, Trying in $retryDelaySeconds seconds..."
-                Start-Sleep -Seconds $retryDelaySeconds
-            }
-        }
+            try {
+                $client = [Net.Sockets.TcpClient]::new()
+                if ($client.ConnectAsync($hostname, $port).Wait($timeout)) {
+                    $client.Close(); return $true
+                }
+                $client.Close()
+            } catch {}
+            Write-Host "Internet connection not available, Trying in $retryDelay seconds..."
+            Start-Sleep -Seconds $retryDelay
+        }  
         Write-Host "`nInternet connection not available after $maxAttempts attempts." -ForegroundColor Red
         Write-Host "A working internet connection is required to download oscdimg.exe."
-        Write-Host "Please check your connection and try again."
-        Remove-TempFiles
-        Read-Host -Prompt "Press Enter to exit"
-        Exit
+        Write-Host "Check your connection and try again."
+
+        while ($true) {
+            $internetChoice = Read-Host -Prompt "`nPress 't' to try again or 'q' to quit"
+            switch ($internetChoice.ToLower()) {
+                't' { return Test-InternetConnection @PSBoundParameters }
+                'q' {
+                    Remove-TempFiles
+                    Exit
+                }
+                default { Write-Host "Invalid input. Enter 't' or 'q'." }
+            }
+        }
     }
     
     Test-InternetConnection
