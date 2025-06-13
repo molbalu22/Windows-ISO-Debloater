@@ -23,21 +23,15 @@ jobs:
           cat download.ps1 >> isoDebloater.bat
           
       - name: Upload PowerShell script
-        uses: actions/upload-release-asset@v1
+        run: |
+          gh release upload "$TAG" ./isoDebloater.ps1 --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./isoDebloater.ps1
-          asset_name: isoDebloater.ps1
-          asset_content_type: text/plain
-          
+          TAG: ${{ github.event.release.tag_name }}
+
       - name: Upload batch script
-        uses: actions/upload-release-asset@v1
+        run: |
+          gh release upload "$TAG" ./isoDebloater.bat --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./isoDebloater.bat
-          asset_name: isoDebloater.bat
-          asset_content_type: text/plain
+          TAG: ${{ github.event.release.tag_name }}
