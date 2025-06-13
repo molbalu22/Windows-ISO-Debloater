@@ -1,12 +1,13 @@
-﻿# Windows ISO Debloater
+# Windows ISO Debloater
 # Author: itsNileshHere
 # Date: 2023-11-21
 # Description: A simple PSscript to modify windows iso file. For more info check README.md
 
 # Administrator Privileges
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Start-Process -FilePath PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"" -Verb RunAs
-    Write-Host "This script requires administrator privileges. Please run it as administrator." -ForegroundColor Red
+    Write-Host "This script must be run as Administrator. Re-launching with elevated privileges..." -ForegroundColor Yellow
+    $argss = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
+    if (Get-Command wt -ErrorAction SilentlyContinue) { Start-Process wt "PowerShell $argss" -Verb RunAs } else { Start-Process PowerShell $argss -Verb RunAs }
     Read-Host -Prompt "Press Enter to exit"
     Exit
 }
@@ -129,7 +130,7 @@ function Set-OwnAndRemove {
         try {
             if($IsFolder) { takeown /F "$FullPath" /R /D Y 2>&1 | Write-Log } else { takeown /F "$FullPath" /A 2>&1 | Write-Log }
             
-            foreach ($Perm in @("*S-1-5-32-544:F", "Administrators:F", "$CurrentUser`:F")) {
+            foreach ($Perm in @("*S-1-5-32-544:F", "System:F", "Administrators:F", "$CurrentUser`:F")) {
                 if($IsFolder) { icacls "$FullPath" /grant:R "$Perm" /T /C 2>&1 | Write-Log } else { icacls "$FullPath" /grant:R "$Perm" 2>&1 | Write-Log }
                 if ($LASTEXITCODE -eq 0) { break }
             }
@@ -164,6 +165,14 @@ function Get-WimInfo {
 
 # Autounattend.xml Path
 $autounattendXmlPath = Join-Path -Path $scriptDirectory -ChildPath "Autounattend.xml"
+
+# Download Autounattend.xml if not exists
+if (-not (Test-Path $autounattendXmlPath)) {
+    $ProgressPreference = 'SilentlyContinue'
+    try { Invoke-WebRequest "https://itsnileshhere.github.io/Windows-ISO-Debloater/autounattend.xml" -OutFile $autounattendXmlPath -UseBasicParsing }
+    catch { Write-Log -msg "Warning: Unable to download Autounattend.xml" }
+    finally { $ProgressPreference = 'Continue' }
+}
 
 Write-Host
 
@@ -327,6 +336,8 @@ $appxPatternsToRemove = @(
     "Microsoft.Xbox.TCUI*", # XboxTCUI
     # "Microsoft.SecHealthUI*",
     "MicrosoftWindows.CrossDevice*", # CrossDevice
+    "Microsoft.Windows.PeopleExperienceHost*", # PeopleExperienceHost
+    "Windows.CBSPreview*",
     "Microsoft.BingSearch*" # Bing Search
 )
 
@@ -350,6 +361,8 @@ $windowsPackagesToRemove = @(
     "Microsoft-Windows-LanguageFeatures-OCR-$langCode-Package*",
     "Microsoft-Windows-LanguageFeatures-Speech-$langCode-Package*",
     "Microsoft-Windows-LanguageFeatures-TextToSpeech-$langCode-Package*",
+    "Microsoft-Windows-Wallpaper-Content-Extended-FoD-Package*",
+    "Microsoft-Windows-WordPad-FoD-Package*",
     "Microsoft-Windows-MediaPlayer-Package*",
     "Microsoft-Windows-TabletPCMath-Package*",
     "Microsoft-Windows-StepsRecorder-Package*"
@@ -434,7 +447,7 @@ foreach ($windowsPackagePattern in $windowsPackagesToRemove) {
 # Remove OutlookPWA
 Write-Host "`nRemoving Outlook..." -ForegroundColor Cyan
 Write-Log -msg "Removing OutlookPWA"
-Start-Sleep -Milliseconds 1500
+Start-Sleep -Milliseconds 1000
 # Get-ChildItem "$installMountDir\Windows\WinSxS\amd64_microsoft-windows-outlookpwa*" -Directory | ForEach-Object { Set-OwnAndRemove -Path $_.FullName } 2>&1 | Write-Log
 Write-Host "Done" -ForegroundColor Green
 
@@ -449,9 +462,9 @@ function Enable-Privilege {
 Enable-Privilege SeTakeOwnershipPrivilege 2>&1 | Write-Log
 
 # Remove OneDrive
-Start-Sleep -Milliseconds 1500
+Start-Sleep -Milliseconds 1000
 Write-Host "`nRemoving OneDrive..." -ForegroundColor Cyan
-Start-Sleep -Milliseconds 1500
+Start-Sleep -Milliseconds 1000
 Write-Log -msg "Defining OneDrive Setup file paths"
 $oneDriveSetupPath1 = Join-Path -Path $installMountDir -ChildPath 'Windows\System32\OneDriveSetup.exe'
 $oneDriveSetupPath2 = Join-Path -Path $installMountDir -ChildPath 'Windows\SysWOW64\OneDriveSetup.exe'
@@ -586,11 +599,11 @@ do {
         break
     }
     else {
-        Write-Host "Invalid input. Please enter 'Y' or 'N'." -ForegroundColor Yellow
+        Write-Host "Invalid input. Enter 'Y' or 'N'." -ForegroundColor Yellow
     }
 } while ($true)
 
-Start-Sleep -Milliseconds 1800
+Start-Sleep -Milliseconds 1400
 Write-Host "`nLoading Registry..." -ForegroundColor Cyan
 Write-Log -msg "Loading registry"
 reg load HKLM\zCOMPONENTS "$installMountDir\Windows\System32\config\COMPONENTS" 2>&1 | Write-Log
@@ -646,6 +659,12 @@ reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryM
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-353694Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-353696Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-338387Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "ContentDeliveryAllowed" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "PreInstalledAppsEverEnabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SoftLandingEnabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SystemPaneSuggestionsEnabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+reg delete "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\Subscriptions" /f 2>&1 | Write-Log
+reg delete "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\SuggestedApps" /f 2>&1 | Write-Log
 
 # Disable Telemetry
 Write-Host "Disabling Telemetry"
@@ -666,17 +685,33 @@ if ($buildNumber -ge 22000) {
     reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\WindowsAI" /v "DisableAIDataAnalysis" /t REG_DWORD /d 1 /f 2>&1 | Write-Log
 }
 
+#Disable Mouse Acceleration
+Write-Host "Disabling Mouse Acceleration"
+reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseSpeed" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseThreshold1" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseThreshold2" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+
 # Disable Meet Now icon
 Write-Host "Disabling Meet"
 reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v "HideSCAMeetNow" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v "AllowOnlineTips" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 
+# Disable cloud-based content
+reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\CloudContent" /v "DisableConsumerAccountStateContent" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\CloudContent" /v "DisableCloudOptimizedContent" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+
 # Disable ad tailoring
 Write-Host "Disabling Ads and Stuffs"
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo" /v "Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 
+# Disable Start Menu Suggestions
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v "Start_IrisRecommendations" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+
 # Disable News and Interest
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Feeds" /v "EnableFeeds" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+
+# Remove Spotlight icon from Desktop
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel" /v "{2cc5ca98-6485-489a-920e-b3e88a6ccce3}" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 
 # Disable Cortana
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Search" /v "AllowCortana" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
@@ -686,6 +721,10 @@ reg add "HKLM\zNTUSER\Control Panel\Desktop" /v "MenuShowDelay" /t REG_SZ /d "20
 
 # Disable everytime MRT download through Win Update
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\MRT" /v "DontOfferThroughWUAU" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+
+# Disable Bitlocker Encryption
+Write-Host "Disabling BitLocker Encryption"
+reg add "HKLM\zSYSTEM\ControlSet001\Control\BitLocker" /v "PreventDeviceEncryption" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 
 # Disable OneDrive Stuffs
 Write-Host "Removing OneDrive Junks"
@@ -785,6 +824,12 @@ do {
         reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassRAMCheck" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
         reg add "HKLM\zSYSTEM\Setup\LabConfig" /v "BypassDiskCheck" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
         reg add "HKLM\zSYSTEM\Setup\MoSetup" /v "AllowUpgradesWithUnsupportedTPMOrCPU" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+
+        # Disable Unsupported Hardware Watermark
+        reg add "HKLM\zDEFAULT\Control Panel\UnsupportedHardwareNotificationCache" /v "SV1" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+        reg add "HKLM\zDEFAULT\Control Panel\UnsupportedHardwareNotificationCache" /v "SV2" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+        reg add "HKLM\zNTUSER\Control Panel\UnsupportedHardwareNotificationCache" /v "SV1" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+        reg add "HKLM\zNTUSER\Control Panel\UnsupportedHardwareNotificationCache" /v "SV2" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
         
         try {
             $bootWimPath = Join-Path $destinationPath "sources\boot.wim"
@@ -803,6 +848,8 @@ do {
             reg add "HKLM\xSYSTEM\Setup\LabConfig" /v "BypassRAMCheck" /t REG_DWORD /d 1 /f 2>&1 | Write-Log
             reg add "HKLM\xSYSTEM\Setup\LabConfig" /v "BypassDiskCheck" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
             reg add "HKLM\xSYSTEM\Setup\MoSetup" /v "AllowUpgradesWithUnsupportedTPMOrCPU" /t REG_DWORD /d 1 /f 2>&1 | Write-Log
+            reg add "HKLM\xDEFAULT\Control Panel\UnsupportedHardwareNotificationCache" /v "SV1" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+            reg add "HKLM\xDEFAULT\Control Panel\UnsupportedHardwareNotificationCache" /v "SV2" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 
             reg unload HKLM\xDEFAULT 2>&1 | Write-Log
             reg unload HKLM\xNTUSER 2>&1 | Write-Log
@@ -821,7 +868,7 @@ do {
         break
     }
     else {
-        Write-Host "Invalid input. Please enter 'Y' or 'N'." -ForegroundColor Yellow
+        Write-Host "Invalid input. Enter 'Y' or 'N'." -ForegroundColor Yellow
     }
 } while ($true)
 
@@ -859,7 +906,7 @@ if ($buildNumber -ge 22000) {
             break
         }
         else {
-            Write-Host "Invalid input. Please enter 'Y' or 'N'." -ForegroundColor Yellow
+            Write-Host "Invalid input. Enter 'Y' or 'N'." -ForegroundColor Yellow
         }
     } while ($true)
 }
