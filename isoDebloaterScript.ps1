@@ -5,8 +5,9 @@
 
 # Administrator Privileges
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Start-Process -FilePath PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"" -Verb RunAs
-    Write-Host "This script requires administrator privileges. Run it as administrator." -ForegroundColor Red
+    Write-Host "This script must be run as Administrator. Re-launching with elevated privileges..." -ForegroundColor Yellow
+    $argss = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
+    if (Get-Command wt -ErrorAction SilentlyContinue) { Start-Process wt "PowerShell $argss" -Verb RunAs } else { Start-Process PowerShell $argss -Verb RunAs }
     Read-Host -Prompt "Press Enter to exit"
     Exit
 }
@@ -167,6 +168,14 @@ $Oscdimg = Join-Path -Path $OscdimgPath -ChildPath 'oscdimg.exe'
 
 # Autounattend.xml Path
 $autounattendXmlPath = Join-Path -Path $scriptDirectory -ChildPath "Autounattend.xml"
+
+# Download Autounattend.xml if not exists
+if (-not (Test-Path $autounattendXmlPath)) {
+    $ProgressPreference = 'SilentlyContinue'
+    try { Invoke-WebRequest "https://itsnileshhere.github.io/Windows-ISO-Debloater/autounattend.xml" -OutFile $autounattendXmlPath -UseBasicParsing }
+    catch { Write-Log -msg "Warning: Unable to download Autounattend.xml" }
+    finally { $ProgressPreference = 'Continue' }
+}
 
 Write-Host
 
@@ -654,7 +663,6 @@ reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryM
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-353696Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SubscribedContent-338387Enabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "ContentDeliveryAllowed" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
-reg add "HKLM\zSOFTWARE\Microsoft\PolicyManager\current\device\Start" /v "ConfigureStartPins" /t REG_SZ /d "{\"pinnedList\": [{}]}" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "PreInstalledAppsEverEnabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SoftLandingEnabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
 reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v "SystemPaneSuggestionsEnabled" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
@@ -680,6 +688,12 @@ if ($buildNumber -ge 22000) {
     reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\WindowsAI" /v "DisableAIDataAnalysis" /t REG_DWORD /d 1 /f 2>&1 | Write-Log
 }
 
+#Disable Mouse Acceleration
+Write-Host "Disabling Mouse Acceleration"
+reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseSpeed" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseThreshold1" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseThreshold2" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+
 # Disable Meet Now icon
 Write-Host "Disabling Meet"
 reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v "HideSCAMeetNow" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
@@ -698,6 +712,9 @@ reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advance
 
 # Disable News and Interest
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Feeds" /v "EnableFeeds" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+
+# Remove Spotlight icon from Desktop
+reg add "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel" /v "{2cc5ca98-6485-489a-920e-b3e88a6ccce3}" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
 
 # Disable Cortana
 reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Search" /v "AllowCortana" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
