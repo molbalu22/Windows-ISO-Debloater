@@ -122,7 +122,7 @@ function Get-Confirmation {
         $answer = $answer.ToUpper()
         if ($answer -eq 'Y') { return $true }
         if ($answer -eq 'N') { return $false }
-        Write-Host "Invalid input. Enter 'Y' for Yes, 'N' for No, or Enter for default ($defaultText)." -ForegroundColor Yellow 
+        Write-Warning "Invalid input. Enter 'Y' for Yes, 'N' for No, or Enter for default ($defaultText)."
     } while ($true) 
 }
 
@@ -948,7 +948,7 @@ if (Test-Path -Path $autounattendXmlPath) {
     Write-Log -msg "Copying Autounattend.xml"
     Copy-Item -Path $autounattendXmlPath -Destination $destinationPath -Force
 } else {
-    Write-Host "Warning: Autounattend.xml not found at $autounattendXmlPath" -ForegroundColor Yellow
+    Write-Warning "Autounattend.xml not found at $autounattendXmlPath"
     Write-Log -msg "Warning: Autounattend.xml not found at $autounattendXmlPath"
 }
 Write-Host "[DONE]" -ForegroundColor Green
@@ -1173,7 +1173,7 @@ if ($exportSuccess) {
         Write-Log -msg "WIM file successfully replaced"
     }
 } else {
-    Write-Host "Error: Unable to export modified WIM file. Check logs for details." -ForegroundColor Yellow
+    Write-Host "Error: Unable to export modified WIM file. Check logs for details." -ForegroundColor Red
     Write-Log -msg "WIM export failed, original WIM file preserved"
     Pause
     Exit
@@ -1191,7 +1191,7 @@ try {
         # Add a small delay to ensure file operations are complete
         Start-Sleep -Seconds 3
     } else {
-        Write-Host "Warning: WIM file validation returned no images" -ForegroundColor Yellow
+        Write-Warning "WIM file validation returned no images"
         Write-Log -msg "WIM validation warning: No images returned"
     }
 } catch {
@@ -1200,11 +1200,10 @@ try {
 }
 
 Write-Log -msg "Checking required files"
-if ($outputISO) { 
-    $ISOFileName = [System.IO.Path]::GetFileNameWithoutExtension($outputISO) 
-    $ISOFileName = $ISOFileName -replace '[<>:"/\\|?*\x00-\x1F]', ''
-    $ISOFileName = $ISOFileName.Trim()
-} else { 
+if ($outputISO) {
+    $ISOFileName = ($ISOFileName -replace '[<>:"/\\|?*\x00-\x1F]', '').Trim()
+    $ISOFileName = [System.IO.Path]::GetFileNameWithoutExtension($outputISO)
+} else {
     do {
         $ISOFileName = Read-Host -Prompt "`nEnter the name for the ISO file (without extension)"
         
@@ -1336,7 +1335,7 @@ if ($DoUseOscdimg) {
             Write-Host ("[OK] ISO creation successful") -ForegroundColor Green
             Write-Log -msg "ISO successfully created with exit code 0"
         } else {
-            Write-Host "Warning: ISO creation finished with errors" -ForegroundColor Yellow
+            Write-Warning "ISO creation finished with errors"
             Write-Log -msg "OSCDIMG exited with code: $($oscdimgProcess.ExitCode)"
         }
     }
@@ -1445,7 +1444,7 @@ if (Test-Path -Path $ISOFile) {
         }
     }
     catch {
-        Write-Host "`nUnable to verify ISO integrity" -ForegroundColor Yellow
+        Write-Warning "`nUnable to verify ISO integrity"
         Write-Log -msg "Failed to verify ISO: $_"
     }
 } else {
