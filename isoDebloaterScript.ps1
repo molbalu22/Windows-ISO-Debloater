@@ -8,6 +8,7 @@ param(
     [string]$isoPath = "",
     [string]$winEdition = "",
     [string]$outputISO = "",
+    [ValidateSet("yes", "no")]$useDISM = "",
     [ValidateSet("yes", "no")]$AppxRemove = "",
     [ValidateSet("yes", "no")]$CapabilitiesRemove = "",
     [ValidateSet("yes", "no")]$OnedriveRemove = "",
@@ -91,6 +92,16 @@ function Write-Log {
             } else { $content = ($content.Trim() -replace '\s{2,}', ' ') }
         }
         if ($content -and $content.Trim()) { Add-Content -Path "$logFilePath" -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $($content.Trim())" }
+    }
+}
+
+# Function to invoke DISM commands if powershell fails
+function Invoke-DismFailsafe {
+    param([scriptblock]$PS, [scriptblock]$Dism)
+    if ($useDISM -ieq "yes") {
+        & $Dism 2>&1 | Write-Log
+    } else {
+        try { & $PS 2>&1 | Write-Log } catch { & $Dism 2>&1 | Write-Log }
     }
 }
 
@@ -372,11 +383,11 @@ if (-not (Test-Path $installWimPath)) {
             }
 
             # Convert ESD to WIM
-            Export-WindowsImage -SourceImagePath $installEsdPath -SourceIndex $sourceIndex -DestinationImagePath $installWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
+            Invoke-DismFailsafe {Export-WindowsImage -SourceImagePath $installEsdPath -SourceIndex $sourceIndex -DestinationImagePath $installWimPath -CompressionType Maximum -CheckIntegrity} {dism /Export-Image /SourceImageFile:$installEsdPath /SourceIndex:$sourceIndex /DestinationImageFile:$installWimPath /Compress:max /CheckIntegrity}
             # Remove the ESD file after conversion
             Remove-Item $installEsdPath -Force
             # Mount the converted WIM with SourceIndex 1
-            Mount-WindowsImage -ImagePath $installWimPath -Index 1 -Path $installMountDir 2>&1 | Write-Log
+            Invoke-DismFailsafe {Mount-WindowsImage -ImagePath $installWimPath -Index 1 -Path $installMountDir} {dism /mount-image /imagefile:$installWimPath /index:1 /mountdir:$installMountDir}
             $sourceIndex = 1  # After conversion, the new WIM will have only one image
         }
         catch {
@@ -423,7 +434,7 @@ else {
             Write-Log -msg "Mounting image: $sourceIndex. $($selectedImage.ImageName)"
         }
 
-        Mount-WindowsImage -ImagePath $installWimPath -Index $sourceIndex -Path $installMountDir 2>&1 | Write-Log
+        Invoke-DismFailsafe {Mount-WindowsImage -ImagePath $installWimPath -Index $sourceIndex -Path $installMountDir} {dism /mount-image /imagefile:$installWimPath /index:$sourceIndex /mountdir:$installMountDir}
     }
     catch {
         Write-Host "Failed to mount the image: $_" -ForegroundColor Red
@@ -684,7 +695,7 @@ if ($DoEDGERemove) {
         $matchedPackages = Get-ProvisionedAppxPackage -Path $installMountDir | 
         Where-Object { $_.PackageName -like $pattern }
         foreach ($package in $matchedPackages) {
-            Remove-ProvisionedAppxPackage -Path $installMountDir -PackageName $package.PackageName 2>&1 | Write-Log
+            Invoke-DismFailsafe {Remove-ProvisionedAppxPackage -Path $installMountDir -PackageName $package.PackageName} {dism /image:$installMountDir /Remove-ProvisionedAppxPackage /PackageName:$($package.PackageName)}
         }
     }
 
@@ -1012,7 +1023,7 @@ if ($DoTPMBypass) {
         $bootWimPath = Join-Path $destinationPath "sources\boot.wim"
         $bootMountDir = "$env:SystemDrive\WIDTemp\mountdir\bootWIM"
         New-Item -ItemType Directory -Path $bootMountDir 2>&1 | Write-Log
-        Mount-WindowsImage -ImagePath $bootWimPath -Index 2 -Path $bootMountDir 2>&1 | Write-Log
+        Invoke-DismFailsafe {Mount-WindowsImage -ImagePath $bootWimPath -Index 2 -Path $bootMountDir}{ {dism /mount-image /imagefile:$bootWimPath /index:2 /mountdir:$bootMountDir}}
 
         reg load HKLM\xDEFAULT "$bootMountDir\Windows\System32\config\default" 2>&1 | Write-Log
         reg load HKLM\xNTUSER "$bootMountDir\Users\Default\ntuser.dat" 2>&1 | Write-Log
@@ -1032,7 +1043,7 @@ if ($DoTPMBypass) {
         reg unload HKLM\xNTUSER 2>&1 | Write-Log
         reg unload HKLM\xSYSTEM 2>&1 | Write-Log
 
-        Dismount-WindowsImage -Path $bootMountDir -Save 2>&1 | Write-Log
+        Invoke-DismFailsafe {Dismount-WindowsImage -Path $bootMountDir -Save} {dism /unmount-image /mountdir:$bootMountDir /commit}
         Write-Host ("[OK] TPM Bypass Successful") -ForegroundColor Green
         Write-Log -msg "Successfully modified boot.wim for TPM Bypass"
     }
@@ -1092,12 +1103,12 @@ Write-Host ("[OK] Success") -ForegroundColor Green
 # Unmounting and cleaning up the image
 Write-Host ("`n[INFO] Cleaning up image...") -ForegroundColor Cyan
 Write-Log -msg "Cleaning up image"
-Repair-WindowsImage -Path $installMountDir -StartComponentCleanup -ResetBase 2>&1 | Write-Log
+Invoke-DismFailsafe {Repair-WindowsImage -Path $installMountDir -StartComponentCleanup -ResetBase} {dism /image:$installMountDir /Cleanup-Image /StartComponentCleanup /ResetBase}
 
 Write-Host ("`n[INFO] Unmounting and Exporting image...") -ForegroundColor Cyan
 Write-Log -msg "Unmounting image"
 try {
-    Dismount-WindowsImage -Path $installMountDir -Save 2>&1 | Write-Log
+    Invoke-DismFailsafe {Dismount-WindowsImage -Path $installMountDir -Save} {dism /unmount-image /mountdir:$installMountDir /commit}
     Write-Log -msg "Image unmounted successfully"
 }
 catch {
@@ -1134,7 +1145,7 @@ if ($DoESDConvert) {
 else {
     Write-Host ("`n[INFO] Exporting image to wim...") -ForegroundColor Cyan
     try {
-        Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $sourceIndex -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity 2>&1 | Write-Log
+        Invoke-DismFailsafe {Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $sourceIndex -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity} {dism /Export-Image /SourceImageFile:$destinationPath\sources\install.wim /SourceIndex:$sourceIndex /DestinationImageFile:$tempWimPath /compress:max}
         if (Test-Path $tempWimPath) {
             $exportSuccess = $true
             Write-Host ("[OK] Export completed successfully") -ForegroundColor Green
