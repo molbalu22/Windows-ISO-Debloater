@@ -51,6 +51,7 @@ Download the latest `isoDebloater.ps1` from [here](https://github.com/itsNileshH
 -outputISO "Name"           # Output ISO filename (without extension)
 
 # CUSTOMIZATION PARAMETERS (All accept "yes" or "no") [Optional]
+-useDISM "yes"              # Use DISM.exe instead of PS cmdlets [Default: yes]
 -AppxRemove "yes"           # Remove Microsoft Store apps [Default: yes]
 -CapabilitiesRemove "yes"   # Remove optional Windows features [Default: yes]
 -OnedriveRemove "yes"       # Remove OneDrive completely [Default: yes]
