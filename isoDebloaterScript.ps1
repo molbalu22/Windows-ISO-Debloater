@@ -168,65 +168,90 @@ function Remove-TempFiles {
     Remove-Item $transcript  -Force 2>&1 | Write-Log
 }
 
-# Force Remove Function
-function Set-OwnAndRemove {
-    param([Parameter(Mandatory)][string]$Path)
-    
-    try {
-        $FullPath = [System.IO.Path]::GetFullPath($Path)
-        if (-not (Test-Path -Path $FullPath)) { return $true }
-
-        # ACL method
+# Set Ownership Permissions
+function Set-Ownership {
+    param([string]$Path, [string[]]$Registry) 
+    if ($Path) {
         try {
+            $FullPath = [System.IO.Path]::GetFullPath($Path)
+            if (-not (Test-Path -Path $FullPath)) { return $true }
             $IsFolder = (Get-Item $FullPath).PSIsContainer
             $Acl = Get-Acl $FullPath
             $Acl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
             $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-            
-            if ($IsFolder) { $AccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow") }
-            else { $AccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow") }
-            
+            $AccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", $(if ($IsFolder) {"ContainerInherit,ObjectInherit"} else {"None"}), "None", "Allow")
             $Acl.SetAccessRule($AccessRule)
             Set-Acl -Path $FullPath -AclObject $Acl
-            
-            # Apply to child items if folder
-            if ($IsFolder) {
-                Get-ChildItem -Path $FullPath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
-                    try {
-                        $ChildAcl = Get-Acl $_.FullName
-                        $ChildAcl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
-                        $ChildAcl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")))
-                        Set-Acl -Path $_.FullName -AclObject $ChildAcl
-                    } catch {}
-                }
-            }
-            
-            Remove-Item -Path $FullPath -Force -Recurse -ErrorAction Stop
-            "Removed with ACL: $FullPath" | Write-Log
+            if ($IsFolder) { Get-ChildItem -Path $FullPath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { 
+                try { $ChildAcl = Get-Acl $_.FullName
+                    $ChildAcl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
+                    $ChildAcl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")))
+                    Set-Acl -Path $_.FullName -AclObject $ChildAcl }
+                catch {}
+            }}
+            Write-Log -msg "Set ownership for: $FullPath"
             return $true
-        } catch {}
-        
-        # icacls fallback
+        } catch { Write-Log -msg "Failed to own path: $Path - $($_.Exception.Message)"; return $false }
+    }
+    if ($Registry) {
         try {
-            if($IsFolder) { takeown /F "$FullPath" /R /D Y 2>&1 | Write-Log } else { takeown /F "$FullPath" /A 2>&1 | Write-Log }
-            
-            foreach ($Perm in @("*S-1-5-32-544:F", "System:F", "Administrators:F", "$CurrentUser`:F")) {
-                if($IsFolder) { icacls "$FullPath" /grant:R "$Perm" /T /C 2>&1 | Write-Log } else { icacls "$FullPath" /grant:R "$Perm" 2>&1 | Write-Log }
-                if ($LASTEXITCODE -eq 0) { break }
+            $sid = (New-Object System.Security.Principal.NTAccount("BUILTIN\Administrators")).Translate([System.Security.Principal.SecurityIdentifier])
+            $rule = New-Object System.Security.AccessControl.RegistryAccessRule("Administrators", "FullControl", "ContainerInherit", "None", "Allow")
+            foreach ($keyPath in $Registry) {
+                try {
+                    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($keyPath, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree, [System.Security.AccessControl.RegistryRights]::TakeOwnership)
+                    if ($key) { $acl = $key.GetAccessControl()
+                        $acl.SetOwner($sid)
+                        $key.SetAccessControl($acl)
+                        $key.Close()
+                        $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($keyPath, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree, [System.Security.AccessControl.RegistryRights]::ChangePermissions)
+                        if ($key) { $acl = $key.GetAccessControl()
+                            $acl.SetAccessRule($rule)
+                            $key.SetAccessControl($acl)
+                            $key.Close()
+                            Write-Log -msg "Set ownership for registry: $keyPath"
+                        }
+                    } else { Write-Log -msg "Unable to open reg-key: $keyPath" }
+                } catch {}
             }
-            
-            Remove-Item -Path $FullPath -Force -Recurse -ErrorAction Stop
-            "Removed with icacls: $FullPath" | Write-Log
             return $true
-        } catch {}
-        
-        "Failed to remove: $FullPath" | Write-Log
-        return $false
+        } catch { Write-Log -msg "Failed to own reg-key: $($_.Exception.Message)"; return $false }
     }
-    catch {
-        "Error: $Path - $($_.Exception.Message)" | Write-Log
-        return $false
-    }
+    return $false
+}
+
+# Force Remove Function
+function Set-OwnAndRemove {
+    param([Parameter(Mandatory=$true)][string]$Path)
+    try {
+        $FullPath = [System.IO.Path]::GetFullPath($Path)
+        if (-not (Test-Path -Path $FullPath)) { return $true }
+        try {
+            $ownershipResult = Set-Ownership -Path $Path
+            if (-not $ownershipResult) { throw "ACL method failed" }
+            Remove-Item -Path $FullPath -Force -Recurse -ErrorAction Stop
+            Write-Log -msg "Removed with ACL: $FullPath"
+            return $true
+        } catch {
+            Write-Log -msg "ACL method failed for: $FullPath"
+            try {
+                $IsFolder = (Get-Item $FullPath -ErrorAction Stop).PSIsContainer
+                $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+                if($IsFolder) { takeown /F "$FullPath" /R /D Y 2>&1 | Write-Log }
+                else { takeown /F "$FullPath" /A 2>&1 | Write-Log }
+                foreach ($Perm in @("*S-1-5-32-544:F", "System:F", "Administrators:F", "$CurrentUser`:F")) {
+                    try {
+                        if($IsFolder) { icacls "$FullPath" /grant:R "$Perm" /T /C 2>&1 | Write-Log }
+                        else { icacls "$FullPath" /grant:R "$Perm" 2>&1 | Write-Log }
+                        if ($LASTEXITCODE -eq 0) { break }
+                    } catch { continue }
+                }
+                Remove-Item -Path $FullPath -Force -Recurse -ErrorAction Stop
+                Write-Log -msg "Removed with icacls: $FullPath"
+                return $true
+            } catch { Write-Log -msg "Failed to remove: $FullPath - $($_.Exception.Message)"; return $false }
+        }
+    } catch { Write-Log -msg "Error processing path: $Path - $($_.Exception.Message)"; return $false }
 }
 
 # Image Info Function
@@ -338,8 +363,8 @@ else {
     Exit
 }
 
-$sourceDrive = "${sourceDriveLetter}:\" # Source Drive of ISO
-$destinationPath = "$env:SystemDrive\WIDTemp\winlite"   # Destination Path
+$sourceDrive = "${sourceDriveLetter}:\"                             # Source Drive of ISO
+$destinationPath = "$env:SystemDrive\WIDTemp\winlite"               # Destination Path
 $installMountDir = "$env:SystemDrive\WIDTemp\mountdir\installWIM"   # Mount Directory
 
 # Copy Files
@@ -816,30 +841,8 @@ reg load HKLM\zSOFTWARE "$installMountDir\Windows\System32\config\SOFTWARE" 2>&1
 reg load HKLM\zSYSTEM "$installMountDir\Windows\System32\config\SYSTEM" 2>&1 | Write-Log
 
 # Setting Permissions
-try {
-    $sid = (New-Object System.Security.Principal.NTAccount("BUILTIN\Administrators")).Translate([System.Security.Principal.SecurityIdentifier])
-    $rule = New-Object System.Security.AccessControl.RegistryAccessRule("Administrators", "FullControl", "ContainerInherit", "None", "Allow")
+Set-Ownership -Registry @("zSOFTWARE\Microsoft\Windows\CurrentVersion\Communications", "zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks", "zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\Microsoft\Windows", "zSOFTWARE\Microsoft\WindowsRuntime\Server\Windows.Gaming.GameBar.Internal.PresenceWriterServer")
 
-    foreach ($keyPath in @("zSOFTWARE\Microsoft\Windows\CurrentVersion\Communications", "zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks", "zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\Microsoft\Windows", "zSOFTWARE\Microsoft\WindowsRuntime\Server\Windows.Gaming.GameBar.Internal.PresenceWriterServer")) {
-        try {
-            $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($keyPath, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree, [System.Security.AccessControl.RegistryRights]::TakeOwnership)
-            if ($key) {
-                $acl = $key.GetAccessControl()
-                $acl.SetOwner($sid)
-                $key.SetAccessControl($acl)
-                $key.Close()
-
-                $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($keyPath, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree, [System.Security.AccessControl.RegistryRights]::ChangePermissions)
-                $acl = $key.GetAccessControl()
-                $acl.SetAccessRule($rule)
-                $key.SetAccessControl($acl)
-                $key.Close()
-            }
-        }
-        catch {}
-    }
-}
-catch {}
 Write-Host ("[OK] Registry loaded") -ForegroundColor Green
 
 # Modify registry settings
