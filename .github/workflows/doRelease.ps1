@@ -8,6 +8,7 @@ param(
     [string]$isoPath = "",
     [string]$winEdition = "",
     [string]$outputISO = "",
+    [ValidateSet("yes", "no")]$useDISM = "",
     [ValidateSet("yes", "no")]$AppxRemove = "",
     [ValidateSet("yes", "no")]$CapabilitiesRemove = "",
     [ValidateSet("yes", "no")]$OnedriveRemove = "",
