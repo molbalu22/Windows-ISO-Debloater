@@ -66,32 +66,49 @@ Start-Sleep -Milliseconds 800
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 $scriptDirectory = "$PSScriptRoot"
-$logFilePath = Join-Path -Path $scriptDirectory -ChildPath 'script_log.txt'
+$logFilePath = Join-Path -Path $scriptDirectory -ChildPath 'script_log.txt'         # Log File Path
+$transcript = "$env:TEMP\transcript_$(Get-Random).txt"                              # Start Transcript
+Start-Transcript $transcript -Append -ErrorAction SilentlyContinue 2>&1 | Out-Null
+
+# Get system information
+$osInfo = Get-WmiObject -Class Win32_OperatingSystem
+$logEntry = @"
+$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Script started
+- Launched As: $((Get-CimInstance Win32_Process -Filter "ProcessId = $PID").CommandLine)
+- Windows Version: $($osInfo.Caption) $($osInfo.Version) (Build $($osInfo.BuildNumber))
+- System Architecture: $($osInfo.OSArchitecture)
+- Install Date: $($osInfo.ConvertToDateTime($osInfo.InstallDate).ToString('yyyy-MM-dd HH:mm:ss'))
+- System Language: $((Get-Culture).DisplayName)
+- Default Language: $((Get-UICulture).DisplayName)
+- Windows Directory: $($env:windir)`n
+"@
 
 # Initialize log file
-"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Script started" | Out-File -FilePath $logFilePath
+$logEntry | Out-File -FilePath $logFilePath -Append
 
-# Log File
+# Function to write logs
 function Write-Log {
     [CmdletBinding()]
     param ([Parameter(ValueFromPipeline=$true)][object]$InputObj, [string]$msg, [switch]$Raw, [string]$Sep = " || ")
     process {
         $content = if ($msg) { $msg } elseif ($null -ne $InputObj) { if ($InputObj -is [string]) { $InputObj } else { $InputObj | Out-String } } else { return }
-        if (-not $Raw -and $content.Trim()) {
+        if (-not $Raw -and ($content = $content.Trim())) {
             $lines = @($content -split '\n' | Where-Object { $_.Trim() })
+            $cut = $lines | Where-Object { $_ -match '^\s*\+\s*(CategoryInfo|FullyQualifiedErrorId)\s*:' } | Select-Object -First 1
+            if ($cut) { $lines = $lines[0..($lines.IndexOf($cut) - 1)] }
             if ($lines.Count -gt 1) {
-                $processedLines = @()
-                foreach ($line in $lines) {
+                $processedLines = foreach ($line in $lines) {
                     $trimmed = $line.Trim()
-                    if ($trimmed -match '^At\s+(.+)') { $processedLines += "At $($matches[1])" }
-                    elseif ($trimmed -match '^\s*\+\s*(.+)') { $processedLines += ("+ " + ($matches[1] -replace '\s{2,}', ' ')) }
-                    elseif ($trimmed -match '^\s*\+?\s*(\w+\w+)\s*:\s*(.+)') { $processedLines += "$($matches[1]): $($matches[2])" }
-                    elseif ($trimmed -notmatch '^-{4,}' -and $trimmed) { $processedLines += ($trimmed -replace '\s{2,}', ' ') }
+                    if ($trimmed -match '^At\s+(.+)') { "At $($matches[1])" }
+                    elseif ($trimmed -match '^\s*\+\s*~+') { continue }  # Skip underline line
+                    elseif ($trimmed -match '^\s*\+\s*(.+)') { "+ " + ($matches[1] -replace '\s{2,}', ' ') }
+                    elseif ($trimmed -match '^\s*\+?\s*(\w+\w+)\s*:\s*(.+)') { "$($matches[1]): $($matches[2])" }
+                    elseif ($trimmed -notmatch '^-{4,}' -and $trimmed) { $trimmed -replace '\s{2,}', ' ' }
                 }
                 $content = $processedLines -join $Sep
-            } else { $content = ($content.Trim() -replace '\s{2,}', ' ') }
+            } else { $content = $content -replace '\s{2,}', ' ' }
         }
-        if ($content -and $content.Trim()) { Add-Content -Path "$logFilePath" -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $($content.Trim())" }
+        if ($content) { Add-Content -Path "$logFilePath" -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $content" }
     }
 }
 
@@ -145,6 +162,10 @@ function Remove-TempFiles {
     Remove-Item -Path $destinationPath -Recurse -Force 2>&1 | Write-Log
     Remove-Item -Path $installMountDir -Recurse -Force 2>&1 | Write-Log
     Remove-Item -Path "$env:SystemDrive\WIDTemp" -Recurse -Force 2>&1 | Write-Log
+    Stop-Transcript 2>&1 | Write-Log
+    $content = Get-Content $transcript | Where-Object { $_ -notmatch "^(Windows PowerShell transcript|Start time:|Username:|RunAs User:|Configuration|Host Application:|Process ID:|PS[A-Z]|BuildVersion:|CLRVersion:|WSManStackVersion:|SerializationVersion:|Transcript started|PS C:\\|^\*{10,}|End time:)" -and $_.Trim() }
+    Add-Content $logFilePath -Value ("`n" + "="*50 + "`nTerminal Snapshot - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" + "`n" + "="*50 + "`n" + ($content -join "`n"))
+    Remove-Item $transcript  -Force 2>&1 | Write-Log
 }
 
 # Force Remove Function
@@ -152,7 +173,7 @@ function Set-OwnAndRemove {
     param([Parameter(Mandatory)][string]$Path)
     
     try {
-        $FullPath = Resolve-Path -Path $Path -ErrorAction Stop
+        $FullPath = [System.IO.Path]::GetFullPath($Path)
         if (-not (Test-Path -Path $FullPath)) { return $true }
 
         # ACL method
@@ -1127,6 +1148,7 @@ $exportSuccess = $false
 
 if ($DoESDConvert) {
     Write-Host ("`n[INFO] Compressing image to esd...") -ForegroundColor Cyan
+    Write-Log -msg "Compressing image to esd"
     try {        
         $process = Start-Process -FilePath "dism.exe" -ArgumentList "/Export-Image /SourceImageFile:`"$destinationPath\sources\install.wim`" /SourceIndex:$sourceIndex /DestinationImageFile:`"$tempWimPath`" /Compress:Recovery /CheckIntegrity" -Wait -NoNewWindow -PassThru
         if ($process.ExitCode -eq 0 -and (Test-Path $tempWimPath)) {
@@ -1144,6 +1166,7 @@ if ($DoESDConvert) {
 }
 else {
     Write-Host ("`n[INFO] Exporting image to wim...") -ForegroundColor Cyan
+    Write-Log -msg "Exporting image to wim"
     try {
         Invoke-DismFailsafe {Export-WindowsImage -SourceImagePath "$destinationPath\sources\install.wim" -SourceIndex $sourceIndex -DestinationImagePath $tempWimPath -CompressionType Maximum -CheckIntegrity} {dism /Export-Image /SourceImageFile:$destinationPath\sources\install.wim /SourceIndex:$sourceIndex /DestinationImageFile:$tempWimPath /compress:max}
         if (Test-Path $tempWimPath) {
@@ -1201,21 +1224,21 @@ try {
 
 Write-Log -msg "Checking required files"
 if ($outputISO) {
-    $ISOFileName = ($ISOFileName -replace '[<>:"/\\|?*\x00-\x1F]', '').Trim()
+    $ISOFileName = ($ISOFileName -replace '[<>:"/\\|?*\x00-\x1F\s]', '').Trim()
     $ISOFileName = [System.IO.Path]::GetFileNameWithoutExtension($outputISO)
 } else {
     do {
         $ISOFileName = Read-Host -Prompt "`nEnter the name for the ISO file (without extension)"
-        
-        # Check if the filename is valid
-        $isValid = $ISOFileName -match '^[^<>:"/\\|?*\x00-\x1F]+$' -and $ISOFileName.Trim().Length -gt 0
-        
-        if (-not $isValid) {
-            Write-Warning "Invalid filename! The name cannot contain <>:`"/\`|?* or control characters and cannot be empty."
+
+        # Remove invalid characters
+        $ISOFileName = ($ISOFileName -replace '[<>:"/\\|?*\x00-\x1F\s]', '').Trim()
+        if ([string]::IsNullOrWhiteSpace($ISOFileName)) {
+            Write-Warning "Filename is empty or invalid. Please enter a valid name."
         }
-    } while (-not $isValid)
+    } while ([string]::IsNullOrWhiteSpace($ISOFileName))
 }
 $ISOFile = Join-Path -Path $scriptDirectory -ChildPath "$ISOFileName.iso"
+Write-Log -msg "ISO file name set to: $ISOFileName.iso"
 
 if ($DoUseOscdimg) {
     if (-not (Test-Path -Path $Oscdimg)) {
