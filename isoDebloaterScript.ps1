@@ -570,25 +570,26 @@ $capabilitiesToRemove = @(
     "Browser.InternetExplorer*",
     "Internet-Explorer*",
     "App.StepsRecorder*",
-    "Language.Handwriting~~~$langCode*",
-    "Language.OCR~~~$langCode*",
-    "Language.Speech~~~$langCode*",
-    "Language.TextToSpeech~~~$langCode*",
-    "Microsoft.Windows.WordPad*",
-    "MathRecognizer*",
-    "Media.WindowsMediaPlayer*",
-    "Microsoft.Windows.PowerShell.ISE*"
+    # "Language.Handwriting~~~$langCode*",
+    # "Language.OCR~~~$langCode*",
+    # "Language.Speech~~~$langCode*",
+    # "Language.TextToSpeech~~~$langCode*",
+    # "Microsoft.Windows.WordPad*",
+    # "MathRecognizer*",
+    "MathRecognizer*"
+    # "Media.WindowsMediaPlayer*",
+    # "Microsoft.Windows.PowerShell.ISE*"
 )
 
 $windowsPackagesToRemove = @(
     "Microsoft-Windows-InternetExplorer-Optional-Package*",
-    "Microsoft-Windows-LanguageFeatures-Handwriting-$langCode-Package*",
-    "Microsoft-Windows-LanguageFeatures-OCR-$langCode-Package*",
-    "Microsoft-Windows-LanguageFeatures-Speech-$langCode-Package*",
-    "Microsoft-Windows-LanguageFeatures-TextToSpeech-$langCode-Package*",
+    # "Microsoft-Windows-LanguageFeatures-Handwriting-$langCode-Package*",
+    # "Microsoft-Windows-LanguageFeatures-OCR-$langCode-Package*",
+    # "Microsoft-Windows-LanguageFeatures-Speech-$langCode-Package*",
+    # "Microsoft-Windows-LanguageFeatures-TextToSpeech-$langCode-Package*",
     "Microsoft-Windows-Wallpaper-Content-Extended-FoD-Package*",
-    "Microsoft-Windows-WordPad-FoD-Package*",
-    "Microsoft-Windows-MediaPlayer-Package*",
+    # "Microsoft-Windows-WordPad-FoD-Package*",
+    # "Microsoft-Windows-MediaPlayer-Package*",
     "Microsoft-Windows-TabletPCMath-Package*",
     "Microsoft-Windows-StepsRecorder-Package*"
 )
@@ -700,6 +701,9 @@ function Enable-Privilege {
 }
 Enable-Privilege SeTakeOwnershipPrivilege | Out-Null
 
+# Never remove OneDrive
+$DoOnedriveRemove = $false
+
 if ($DoOnedriveRemove) {
     # Remove OneDrive
     Write-Host ("`n[INFO] Removing OneDrive...") -ForegroundColor Cyan
@@ -722,6 +726,9 @@ if ($DoOnedriveRemove) {
 } else {
     Write-Log -msg "OneDrive removal skipped"
 }
+
+# Never remove Edge
+$DoEDGERemove = $false
 
 if ($DoEDGERemove) {
     # Remove EDGE
@@ -894,11 +901,11 @@ if ($buildNumber -ge 22000) {
 }
 
 # Disable Mouse Acceleration
-Write-Host -NoNewline ("  Disabling Mouse Acceleration".PadRight($statusColumn))
-reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseSpeed" /t REG_SZ /d "0" /f 2>&1 | Write-Log
-reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseThreshold1" /t REG_SZ /d "0" /f 2>&1 | Write-Log
-reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseThreshold2" /t REG_SZ /d "0" /f 2>&1 | Write-Log
-Write-Host "[DONE]" -ForegroundColor Green
+# Write-Host -NoNewline ("  Disabling Mouse Acceleration".PadRight($statusColumn))
+# reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseSpeed" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+# reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseThreshold1" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+# reg add "HKLM\zNTUSER\Control Panel\Mouse" /v "MouseThreshold2" /t REG_SZ /d "0" /f 2>&1 | Write-Log
+# Write-Host "[DONE]" -ForegroundColor Green
 
 # Disable Meet Now icon
 Write-Host -NoNewline ("  Disabling Meet".PadRight($statusColumn))
@@ -928,17 +935,17 @@ reg add "HKLM\zSOFTWARE\Policies\Microsoft\MRT" /v "DontOfferThroughWUAU" /t REG
 Write-Host "[DONE]" -ForegroundColor Green
 
 # Disable Bitlocker
-Write-Host -NoNewline ("  Disabling Bitlocker Encryption".PadRight($statusColumn))
-reg add "HKLM\zSYSTEM\ControlSet001\Control\BitLocker" /v "PreventDeviceEncryption" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-Write-Host "[DONE]" -ForegroundColor Green
+# Write-Host -NoNewline ("  Disabling Bitlocker Encryption".PadRight($statusColumn))
+# reg add "HKLM\zSYSTEM\ControlSet001\Control\BitLocker" /v "PreventDeviceEncryption" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+# Write-Host "[DONE]" -ForegroundColor Green
 
 # Disable OneDrive Stuffs
-Write-Host -NoNewline ("  Removing OneDrive Junks".PadRight($statusColumn))
-reg delete "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Run" /v "OneDriveSetup" /f 2>&1 | Write-Log
-reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OneDrive" /v "DisableLibrariesDefaultSaveToOneDrive" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
-reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OneDrive" /v "DisableFileSyncNGSC" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-reg add "HKLM\zSOFTWARE\Policies\Microsoft\OneDrive" /v "KFMBlockOptIn" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
-Write-Host "[DONE]" -ForegroundColor Green
+# Write-Host -NoNewline ("  Removing OneDrive Junks".PadRight($statusColumn))
+# reg delete "HKLM\zNTUSER\Software\Microsoft\Windows\CurrentVersion\Run" /v "OneDriveSetup" /f 2>&1 | Write-Log
+# reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OneDrive" /v "DisableLibrariesDefaultSaveToOneDrive" /t REG_DWORD /d "0" /f 2>&1 | Write-Log
+# reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\OneDrive" /v "DisableFileSyncNGSC" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+# reg add "HKLM\zSOFTWARE\Policies\Microsoft\OneDrive" /v "KFMBlockOptIn" /t REG_DWORD /d "1" /f 2>&1 | Write-Log
+# Write-Host "[DONE]" -ForegroundColor Green
 
 # Disable GameDVR
 Write-Host -NoNewline ("  Disabling GameDVR and Components".PadRight($statusColumn))
